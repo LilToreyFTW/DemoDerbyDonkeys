@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Donkey Derby</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game"></canvas>
+      <div class="hud">
+        <div class="status">
+          <strong>Donkey Derby</strong>
+          <span id="speed">0 mph</span>
+          <span id="damage">Damage 0%</span>
+          <span id="score">Hits 0</span>
+          <span id="powerup">Power none</span>
+          <span id="map">Map Neon Arcade</span>
+        </div>
+        <div class="controls">
+          <span>WASD drive</span>
+          <span>Space handbrake</span>
+          <span>C customize</span>
+          <span>R reset</span>
+          <span>M map</span>
+          <span>P passenger</span>
+        </div>
+      </div>
+      <aside class="garage" id="garage" aria-label="Car customization">
+        <header>
+          <strong>Garage</strong>
+          <button id="closeGarage" type="button" aria-label="Close garage">x</button>
+        </header>
+        <label>
+          Paint
+          <input id="paint" type="color" value="#f04f32" />
+        </label>
+        <label>
+          Stripe
+          <input id="stripe" type="color" value="#ffe45e" />
+        </label>
+        <label>
+          Body kit
+          <select id="bodyKit">
+            <option value="wedge">Wedge</option>
+            <option value="tank">Tank</option>
+            <option value="lowrider">Lowrider</option>
+          </select>
+        </label>
+        <label>
+          Teeth size
+          <input id="teeth" type="range" min="0.8" max="2.2" value="1.65" step="0.05" />
+        </label>
+        <label class="checkbox-row">
+          Champion rider
+          <input id="companionToggle" type="checkbox" disabled />
+        </label>
+      </aside>
+      <button class="garage-toggle" id="openGarage" type="button" aria-label="Open garage">C</button>
+      <div class="banner" id="banner">Wreck rival cars before yours falls apart.</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
