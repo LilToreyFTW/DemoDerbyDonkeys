@@ -167,18 +167,19 @@ let donkeyDriverTemplate: THREE.Group | null = null;
 let derbyCarTemplate: THREE.Group | null = null;
 
 const mapThemes: MapTheme[] = [
-  { name: "Neon Junkyard Bowl", floor: 0x252a25, grid: 0x54f2a8, neonA: 0xffd43b, neonB: 0x36d7ff, accent: 0xff5b39, props: "junkyard" },
-  { name: "Mall Food Court Derby", floor: 0x273038, grid: 0xff75c8, neonA: 0x31f0ff, neonB: 0xffd43b, accent: 0xff4f38, props: "foodcourt" },
-  { name: "Laser Roller Rink", floor: 0x18313a, grid: 0xfff14d, neonA: 0xff4fd8, neonB: 0x5eff7e, accent: 0x47b4ff, props: "laserRink" },
-  { name: "Neon Arcade", floor: 0x221b35, grid: 0xff4fd8, neonA: 0x46b5ff, neonB: 0xff3bd5, accent: 0xffd95a, props: "arcade" },
-  { name: "VHS Parking Lot", floor: 0x302538, grid: 0x79ffe1, neonA: 0xff4f38, neonB: 0x7c5cff, accent: 0xf7f0df, props: "vhs" },
-  { name: "Laser Roller Rink", floor: 0x18313a, grid: 0xfff14d, neonA: 0xff4fd8, neonB: 0x5eff7e, accent: 0x47b4ff, props: "rink" },
-  { name: "Pizza Palace 2099", floor: 0x332015, grid: 0xffd43b, neonA: 0xff3b2f, neonB: 0x31f0ff, accent: 0x63db7b, props: "pizza" },
-  { name: "Dead Mall Dream", floor: 0x1d2634, grid: 0xff75c8, neonA: 0x00e5ff, neonB: 0xf5ead0, accent: 0xff9d2f, props: "mall" },
-  { name: "Holo Drive-In", floor: 0x17212b, grid: 0x7affd7, neonA: 0xffe45e, neonB: 0x46b5ff, accent: 0xff4f7b, props: "drivein" },
-  { name: "Cyber Skatepark", floor: 0x20242c, grid: 0xa8ff3e, neonA: 0xff4fd8, neonB: 0x00d4ff, accent: 0xfff14d, props: "skatepark" },
-  { name: "Subway Afterhours", floor: 0x1b1f22, grid: 0xff3434, neonA: 0xffd43b, neonB: 0x4ee6ff, accent: 0xb088ff, props: "subway" },
+  { name: "Scrapyard Slam", floor: 0x5c5548, grid: 0x8d8170, neonA: 0xb85c28, neonB: 0x8a9a5b, accent: 0xd4a03c, props: "junkyard" },
+  { name: "Boardwalk Brawl", floor: 0xe0d4b8, grid: 0xc4b898, neonA: 0xff6b4a, neonB: 0x4ecdc4, accent: 0xffd93d, props: "foodcourt" },
+  { name: "Alpine Arena", floor: 0xd8e2e8, grid: 0xa8b8c4, neonA: 0x2d5a6b, neonB: 0x8cb4c4, accent: 0xc43e3e, props: "laserRink" },
+  { name: "Redwood Rally", floor: 0x3d3328, grid: 0x5c4d3c, neonA: 0x4a7c59, neonB: 0x8b6914, accent: 0xc1440e, props: "arcade" },
+  { name: "Harbor Havoc", floor: 0x4a5560, grid: 0x6a7a8a, neonA: 0xff8c42, neonB: 0x4a90e2, accent: 0xf4e4bc, props: "vhs" },
+  { name: "Moonlit Mesa", floor: 0x8b7355, grid: 0xa89070, neonA: 0xe8c547, neonB: 0x6b8cae, accent: 0xc75b39, props: "rink" },
+  { name: "Canyon Crunch", floor: 0xa85d3e, grid: 0xc47a5a, neonA: 0xd4a03c, neonB: 0x8b4513, accent: 0xcd5c5c, props: "pizza" },
+  { name: "Overgrown Oasis", floor: 0x2d3a2d, grid: 0x4a5a4a, neonA: 0x6b8e6b, neonB: 0x8b7355, accent: 0xd4a03c, props: "mall" },
+  { name: "Midnight Farm", floor: 0x3d3530, grid: 0x5a5048, neonA: 0xb85c28, neonB: 0x6b7a3e, accent: 0xd4a03c, props: "drivein" },
+  { name: "Frostbite Fair", floor: 0xc8d8e8, grid: 0xa8b8c8, neonA: 0x8cb4d4, neonB: 0xd4a0d4, accent: 0xe85d75, props: "skatepark" },
+  { name: "Iron Works", floor: 0x3a3a3a, grid: 0x5a5a5a, neonA: 0xff6b35, neonB: 0x8a9aaa, accent: 0xffd43b, props: "subway" },
 ];
+const MAP_SCALE = 1.25;
 let currentMapIndex = 0;
 
 void boot();
@@ -237,23 +238,23 @@ async function loadDerbyCarModel() {
 
 function buildArena() {
   const floorMat = new THREE.MeshStandardMaterial({ color: 0x5b5147, roughness: 0.92 });
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(42, 96), floorMat);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(52, 96), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const grid = new THREE.GridHelper(84, 28, 0x8d8170, 0x6f6558);
+  const grid = new THREE.GridHelper(104, 28, 0x8d8170, 0x6f6558);
   grid.position.y = 0.015;
   scene.add(grid);
 
   const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.05, 0));
-  world.createCollider(RAPIER.ColliderDesc.cuboid(44, 0.05, 44).setFriction(1.1), groundBody);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(54, 0.05, 54).setFriction(1.1), groundBody);
 
   const barrierMat = new THREE.MeshStandardMaterial({ color: 0x30383a, roughness: 0.7, metalness: 0.2 });
   for (let i = 0; i < 24; i += 1) {
     const angle = (i / 24) * Math.PI * 2;
-    const x = Math.cos(angle) * 41;
-    const z = Math.sin(angle) * 41;
+    const x = Math.cos(angle) * 50;
+    const z = Math.sin(angle) * 50;
     const wall = new THREE.Mesh(new THREE.BoxGeometry(8, 3, 1.2), barrierMat);
     wall.position.set(x, 1.5, z);
     wall.rotation.y = -angle;
@@ -271,7 +272,7 @@ function buildArena() {
       new THREE.ConeGeometry(0.45, 1.4, 4),
       new THREE.MeshStandardMaterial({ color: i % 2 ? 0xffffff : 0xff7a24, roughness: 0.8 }),
     );
-    cone.position.set(Math.cos(angle) * 26, 0.7, Math.sin(angle) * 26);
+    cone.position.set(Math.cos(angle) * 32, 0.7, Math.sin(angle) * 32);
     cone.castShadow = true;
     scene.add(cone);
   }
@@ -289,10 +290,10 @@ function buildMapLayer() {
   mapGroup.name = `map-${theme.name}`;
   scene.add(mapGroup);
   scene.background = new THREE.Color(theme.floor).offsetHSL(0, -0.08, -0.08);
-  scene.fog = new THREE.Fog(scene.background, 42, 112);
+  scene.fog = new THREE.Fog(scene.background, 52, 130);
 
   const floor = new THREE.Mesh(
-    new THREE.RingGeometry(4, 40.5, 96),
+    new THREE.RingGeometry(4, 50, 96),
     new THREE.MeshStandardMaterial({ color: theme.floor, roughness: 0.78, metalness: 0.12 }),
   );
   floor.rotation.x = -Math.PI / 2;
@@ -300,8 +301,15 @@ function buildMapLayer() {
   floor.receiveShadow = true;
   mapGroup.add(floor);
 
-  const neonGrid = new THREE.GridHelper(80, 20, theme.grid, theme.neonA);
+  const neonGrid = new THREE.GridHelper(100, 20, theme.grid, theme.neonA);
   neonGrid.position.y = 0.04;
+  const gridMats = Array.isArray(neonGrid.material) ? neonGrid.material : [neonGrid.material];
+  for (const gm of gridMats) {
+    if (gm instanceof THREE.LineBasicMaterial) {
+      gm.transparent = true;
+      gm.opacity = 0.25;
+    }
+  }
   mapGroup.add(neonGrid);
 
   buildCyberBackdrop(theme);
@@ -312,16 +320,34 @@ function buildMapLayer() {
 }
 
 function buildCyberBackdrop(theme: MapTheme) {
-  const signMatA = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 1.15, roughness: 0.35 });
-  const signMatB = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 1.05, roughness: 0.35 });
+  const matA = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.18, roughness: 0.65 });
+  const matB = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.12, roughness: 0.72 });
   for (let i = 0; i < 20; i += 1) {
     const angle = (i / 20) * Math.PI * 2;
-    const radius = 61 + (i % 3) * 3.2;
-    const tower = new THREE.Mesh(
-      new THREE.BoxGeometry(1.6 + (i % 4) * 0.45, 5 + (i % 5) * 1.7, 1.1),
-      i % 2 === 0 ? signMatA : signMatB,
-    );
-    tower.position.set(Math.cos(angle) * radius, tower.geometry.parameters.height / 2, Math.sin(angle) * radius);
+    const radius = 75 + (i % 3) * 3.2;
+    let tower: THREE.Mesh;
+    if (theme.props === "junkyard") {
+      tower = new THREE.Mesh(
+        new THREE.ConeGeometry(1.2 + (i % 3) * 0.35, 4 + (i % 5) * 1.4, 5),
+        i % 2 === 0 ? matA : matB,
+      );
+    } else if (theme.props === "laserRink" || theme.props === "skatepark") {
+      tower = new THREE.Mesh(
+        new THREE.ConeGeometry(0.9 + (i % 3) * 0.3, 5 + (i % 5) * 1.8, 6),
+        i % 2 === 0 ? matA : matB,
+      );
+    } else if (theme.props === "arcade" || theme.props === "mall") {
+      tower = new THREE.Mesh(
+        new THREE.BoxGeometry(2 + (i % 4) * 0.5, 5 + (i % 5) * 2, 2 + (i % 3) * 0.6),
+        i % 2 === 0 ? matA : matB,
+      );
+    } else {
+      tower = new THREE.Mesh(
+        new THREE.BoxGeometry(1.6 + (i % 4) * 0.45, 5 + (i % 5) * 1.7, 1.1),
+        i % 2 === 0 ? matA : matB,
+      );
+    }
+    tower.position.set(Math.cos(angle) * radius, (tower.geometry as any).parameters.height / 2, Math.sin(angle) * radius);
     tower.rotation.y = -angle;
     tower.castShadow = true;
     mapGroup.add(tower);
@@ -330,18 +356,18 @@ function buildCyberBackdrop(theme: MapTheme) {
 
 function buildDonkeyCrowd(theme: MapTheme) {
   const bleacherMat = new THREE.MeshStandardMaterial({ color: 0x171c22, roughness: 0.72, metalness: 0.28 });
-  const railMat = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.65, roughness: 0.4, metalness: 0.18 });
+  const railMat = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.18, roughness: 0.55, metalness: 0.18 });
   const backWallMat = new THREE.MeshStandardMaterial({ color: 0x080d12, roughness: 0.82, metalness: 0.2 });
   const rows = [
-    { radius: 55.5, y: 3.2, depth: 1.8 },
-    { radius: 59.2, y: 4.35, depth: 1.9 },
-    { radius: 63.2, y: 5.5, depth: 2 },
+    { radius: 68, y: 3.2, depth: 1.8 },
+    { radius: 72, y: 4.35, depth: 1.9 },
+    { radius: 76, y: 5.5, depth: 2 },
   ];
 
   for (let segment = 0; segment < 16; segment += 1) {
     const angle = (segment / 16) * Math.PI * 2;
     const retainingWall = new THREE.Mesh(new THREE.BoxGeometry(7.4, 3.2, 0.38), backWallMat);
-    retainingWall.position.set(Math.cos(angle) * 52.4, 1.7, Math.sin(angle) * 52.4);
+    retainingWall.position.set(Math.cos(angle) * 64, 1.7, Math.sin(angle) * 64);
     retainingWall.rotation.y = -angle;
     retainingWall.castShadow = true;
     retainingWall.receiveShadow = true;
@@ -357,7 +383,7 @@ function buildDonkeyCrowd(theme: MapTheme) {
     }
 
     const rail = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.14, 0.14), railMat);
-    rail.position.set(Math.cos(angle) * 53.15, 3.15, Math.sin(angle) * 53.15);
+    rail.position.set(Math.cos(angle) * 65, 3.15, Math.sin(angle) * 65);
     rail.rotation.y = -angle;
     mapGroup.add(rail);
   }
@@ -389,7 +415,7 @@ function createCrowdDonkey(neonColor: number) {
   head.position.set(0, 1.08, -0.05);
   group.add(head);
 
-  const glow = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: neonColor, emissive: neonColor, emissiveIntensity: 0.9 }));
+  const glow = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: neonColor, emissive: neonColor, emissiveIntensity: 0.25 }));
   glow.position.set(0, 0.98, -0.27);
   group.add(glow);
 
@@ -404,8 +430,8 @@ function createCrowdDonkey(neonColor: number) {
 }
 
 function buildMapProps(theme: MapTheme) {
-  const matA = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.55, roughness: 0.45, metalness: 0.2 });
-  const matB = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.4, roughness: 0.55, metalness: 0.1 });
+  const matA = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.12, roughness: 0.55, metalness: 0.2 });
+  const matB = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.08, roughness: 0.62, metalness: 0.1 });
   const matAccent = new THREE.MeshStandardMaterial({ color: theme.accent, roughness: 0.72, metalness: 0.15 });
 
   if (theme.props === "junkyard") {
@@ -415,34 +441,34 @@ function buildMapProps(theme: MapTheme) {
   } else if (theme.props === "laserRink") {
     buildLaserRollerRink(theme, matA, matB, matAccent);
   } else if (theme.props === "arcade") {
-    addPropWall(-25, -5, 1.8, 4, 3, matA);
-    addPropWall(24, 7, 1.8, 4, 3, matB);
-    addPropWall(0, -24, 8, 1.2, 2.2, matAccent);
+    addPropWall(-30, -6, 1.8, 4, 3, matA);
+    addPropWall(29, 8, 1.8, 4, 3, matB);
+    addPropWall(0, -29, 8, 1.2, 2.2, matAccent);
   } else if (theme.props === "vhs") {
-    addPropWall(-21, 16, 7, 0.9, 2.4, matA);
-    addPropWall(21, -14, 7, 0.9, 2.4, matB);
-    addPropWall(0, 0, 3.2, 3.2, 1.8, matAccent);
+    addPropWall(-25, 19, 7, 0.9, 2.4, matA);
+    addPropWall(25, -16, 7, 0.9, 2.4, matB);
+    addPropWall(0, 0, 2.4, 2.4, 1.4, matAccent);
   } else if (theme.props === "rink") {
-    for (const z of [-18, 18]) addPropWall(0, z, 10, 0.8, 1.4, z < 0 ? matA : matB);
+    for (const z of [-22, 22]) addPropWall(0, z, 10, 0.8, 1.4, z < 0 ? matA : matB);
   } else if (theme.props === "pizza") {
-    addPropWall(-11, -11, 5.5, 1.1, 2.1, matAccent);
-    addPropWall(13, 11, 5.5, 1.1, 2.1, matA);
-    addPropWall(0, 22, 3, 3, 2.6, matB);
+    addPropWall(-13, -13, 4.5, 1.1, 2.1, matAccent);
+    addPropWall(15, 13, 4.5, 1.1, 2.1, matA);
+    addPropWall(0, 26, 2.5, 2.5, 2.2, matB);
   } else if (theme.props === "mall") {
-    addPropWall(-18, 0, 1.4, 12, 2, matA);
-    addPropWall(18, 0, 1.4, 12, 2, matB);
+    addPropWall(-22, 0, 1.4, 10, 2, matA);
+    addPropWall(22, 0, 1.4, 10, 2, matB);
   } else if (theme.props === "drivein") {
-    addPropWall(0, -20, 14, 0.7, 4.4, matA);
-    addPropWall(-17, 13, 4, 1.1, 1.5, matAccent);
-    addPropWall(17, 13, 4, 1.1, 1.5, matAccent);
+    addPropWall(0, -24, 14, 0.7, 4.4, matA);
+    addPropWall(-20, 15, 4, 1.1, 1.5, matAccent);
+    addPropWall(20, 15, 4, 1.1, 1.5, matAccent);
   } else if (theme.props === "skatepark") {
-    addRamp(-14, -6, 6, 2.8, matA, -0.45);
-    addRamp(14, 8, 6, 2.8, matB, 0.45);
-    addPropWall(0, 0, 8, 0.8, 1.3, matAccent);
+    addRamp(-17, -7, 6, 2.8, matA, -0.45);
+    addRamp(17, 10, 6, 2.8, matB, 0.45);
+    addPropWall(0, 0, 6, 0.8, 1.3, matAccent);
   } else {
-    addPropWall(-23, 0, 2, 15, 2.2, matA);
-    addPropWall(23, 0, 2, 15, 2.2, matB);
-    addPropWall(0, -18, 7, 1.1, 1.8, matAccent);
+    addPropWall(-28, 0, 2, 12, 2.2, matA);
+    addPropWall(28, 0, 2, 12, 2.2, matB);
+    addPropWall(0, -22, 6, 1.1, 1.8, matAccent);
   }
 
   addHistoricalArchiveKiosk(theme);
@@ -454,20 +480,20 @@ function buildJunkyardBowl(theme: MapTheme, matA: THREE.Material, matB: THREE.Ma
   const hazardMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.25, roughness: 0.62 });
 
   addCraneSetPiece(theme);
-  addPropWall(-18, -15, 9, 1.1, 1.8, scrapMat, -0.35);
-  addPropWall(19, 14, 9, 1.1, 1.8, scrapMat, -0.35);
-  addPropWall(-23, 8, 1.2, 8, 2.2, matA, 0.22);
-  addPropWall(23, -8, 1.2, 8, 2.2, matB, 0.22);
-  addRamp(-10, 10, 6.5, 3.2, matAccent, -0.35, 0.5);
-  addRamp(11, -11, 6.5, 3.2, matAccent, 0.35, -0.45);
+  addPropWall(-22, -18, 9, 1.1, 1.8, scrapMat, -0.35);
+  addPropWall(23, 17, 9, 1.1, 1.8, scrapMat, -0.35);
+  addPropWall(-28, 10, 1.2, 8, 2.2, matA, 0.22);
+  addPropWall(28, -10, 1.2, 8, 2.2, matB, 0.22);
+  addRamp(-12, 12, 6.5, 3.2, matAccent, -0.35, 0.5);
+  addRamp(13, -13, 6.5, 3.2, matAccent, 0.35, -0.45);
 
-  for (const [x, z, rotation] of [[-9, -23, 0.2], [8, 23, -0.25], [-27, -2, 1.35], [27, 2, -1.35]] as Array<[number, number, number]>) {
+  for (const [x, z, rotation] of [[-11, -28, 0.2], [10, 28, -0.25], [-33, -2, 1.35], [33, 2, -1.35]] as Array<[number, number, number]>) {
     addPropWall(x, z, 4.7, 1, 1.1, hazardMat, rotation);
   }
 
-  for (let i = 0; i < 10; i += 1) {
-    const angle = (i / 10) * Math.PI * 2 + 0.18;
-    const radius = i % 2 === 0 ? 30 : 34;
+  for (let i = 0; i < 8; i += 1) {
+    const angle = (i / 8) * Math.PI * 2 + 0.18;
+    const radius = i % 2 === 0 ? 36 : 40;
     addTireStack(Math.cos(angle) * radius, Math.sin(angle) * radius, tireMat, 2 + (i % 3));
   }
 }
@@ -477,15 +503,15 @@ function buildFoodCourtDerby(theme: MapTheme, matA: THREE.Material, matB: THREE.
   const planterMat = new THREE.MeshStandardMaterial({ color: 0x2f6f51, roughness: 0.84 });
   const counterMat = new THREE.MeshStandardMaterial({ color: 0x101820, roughness: 0.68, metalness: 0.22 });
 
-  addFoodKiosk(-18, -12, "TACO", matA, counterMat, theme);
-  addFoodKiosk(18, 12, "PIZZA", matB, counterMat, theme);
-  addFoodKiosk(-17, 14, "BUBBLE", matAccent, counterMat, theme);
-  addPropWall(0, -23, 14, 1, 2.4, matA);
-  addPropWall(0, 23, 14, 1, 2.4, matB);
-  addEscalatorRamp(-7, 0, matAccent, -0.28);
-  addEscalatorRamp(7, 0, matAccent, 0.28);
+  addFoodKiosk(-22, -14, "TACO", matA, counterMat, theme);
+  addFoodKiosk(22, 14, "PIZZA", matB, counterMat, theme);
+  addFoodKiosk(-20, 17, "BUBBLE", matAccent, counterMat, theme);
+  addPropWall(0, -28, 14, 1, 2.4, matA);
+  addPropWall(0, 28, 14, 1, 2.4, matB);
+  addEscalatorRamp(-8, 0, matAccent, -0.28);
+  addEscalatorRamp(8, 0, matAccent, 0.28);
 
-  for (const [x, z] of [[-6, -14], [7, -14], [-7, 15], [6, 15], [-24, 0], [24, 0]] as Array<[number, number]>) {
+  for (const [x, z] of [[-7, -17], [8, -17], [-8, 18], [7, 18], [-29, 0], [29, 0]] as Array<[number, number]>) {
     addPlanter(x, z, tileMat, planterMat);
   }
 }
@@ -496,23 +522,23 @@ function buildLaserRollerRink(theme: MapTheme, matA: THREE.Material, matB: THREE
   const glowMat = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.92, roughness: 0.32 });
 
   addDiscoCenterpiece(theme, discoMat);
-  addPropWall(-18, 0, 1, 18, 1.15, railMat);
-  addPropWall(18, 0, 1, 18, 1.15, railMat);
-  addPropWall(0, -19, 18, 1, 1.15, railMat);
-  addPropWall(0, 19, 18, 1, 1.15, railMat);
-  addRamp(-12, -12, 7, 3, matA, -0.28, 0.65);
-  addRamp(12, 12, 7, 3, matB, 0.28, -0.65);
-  for (let i = 0; i < 8; i += 1) {
-    const angle = (i / 8) * Math.PI * 2;
-    addLaserPylon(Math.cos(angle) * 27, Math.sin(angle) * 27, glowMat, theme, -angle);
+  addPropWall(-22, 0, 1, 18, 1.15, railMat);
+  addPropWall(22, 0, 1, 18, 1.15, railMat);
+  addPropWall(0, -23, 18, 1, 1.15, railMat);
+  addPropWall(0, 23, 18, 1, 1.15, railMat);
+  addRamp(-14, -14, 7, 3, matA, -0.28, 0.65);
+  addRamp(14, 14, 7, 3, matB, 0.28, -0.65);
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI * 2;
+    addLaserPylon(Math.cos(angle) * 32, Math.sin(angle) * 32, glowMat, theme, -angle);
   }
-  addPropWall(-27, 0, 0.55, 8, 2.8, matAccent, 0.3);
-  addPropWall(27, 0, 0.55, 8, 2.8, matAccent, -0.3);
+  addPropWall(-33, 0, 0.55, 8, 2.8, matAccent, 0.3);
+  addPropWall(33, 0, 0.55, 8, 2.8, matAccent, -0.3);
 }
 
 function addCraneSetPiece(theme: MapTheme) {
   const steelMat = new THREE.MeshStandardMaterial({ color: 0x2d3637, roughness: 0.58, metalness: 0.62 });
-  const hookMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.22, roughness: 0.45, metalness: 0.45 });
+  const hookMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.08, roughness: 0.55, metalness: 0.45 });
   const crane = new THREE.Group();
   crane.position.set(0, 0, -29);
   mapGroup.add(crane);
@@ -576,7 +602,7 @@ function addFoodKiosk(x: number, z: number, label: string, signMat: THREE.Materi
   group.add(sign);
 
   for (let i = 0; i < label.length; i += 1) {
-    const light = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.8 }));
+    const light = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.25 }));
     light.position.set((i - label.length / 2) * 0.55 + 0.25, 2.15, -1.29);
     group.add(light);
   }
@@ -612,7 +638,7 @@ function addDiscoCenterpiece(theme: MapTheme, discoMat: THREE.Material) {
   group.add(ball);
   for (let i = 0; i < 12; i += 1) {
     const angle = (i / 12) * Math.PI * 2;
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 10), new THREE.MeshStandardMaterial({ color: i % 2 ? theme.neonA : theme.neonB, emissive: i % 2 ? theme.neonA : theme.neonB, emissiveIntensity: 0.9, transparent: true, opacity: 0.72 }));
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 10), new THREE.MeshStandardMaterial({ color: i % 2 ? theme.neonA : theme.neonB, emissive: i % 2 ? theme.neonA : theme.neonB, emissiveIntensity: 0.2, transparent: true, opacity: 0.55 }));
     beam.position.set(Math.cos(angle) * 4.8, 3.8, Math.sin(angle) * 4.8);
     beam.rotation.y = -angle;
     group.add(beam);
@@ -621,7 +647,7 @@ function addDiscoCenterpiece(theme: MapTheme, discoMat: THREE.Material) {
 
 function addLaserPylon(x: number, z: number, material: THREE.Material, theme: MapTheme, rotationY: number) {
   addPropWall(x, z, 0.75, 0.75, 3.4, material, rotationY);
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 7.5), new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.8, transparent: true, opacity: 0.62 }));
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 7.5), new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.22, transparent: true, opacity: 0.5 }));
   beam.position.set(x, 2.4, z);
   beam.rotation.y = rotationY;
   mapGroup.add(beam);
@@ -664,8 +690,8 @@ function addHistoricalArchiveKiosk(theme: MapTheme) {
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x6adfff, emissive: 0x114d66, emissiveIntensity: 0.32, transparent: true, opacity: 0.34, roughness: 0.12 });
   const bronzeMat = new THREE.MeshStandardMaterial({ color: 0x8c6a46, roughness: 0.68, metalness: 0.26 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x15100d, roughness: 0.76 });
-  const neonMat = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.85, roughness: 0.36 });
-  const warnMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.42, roughness: 0.44 });
+  const neonMat = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.22, roughness: 0.48 });
+  const warnMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.15, roughness: 0.52 });
 
   const plinth = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.7, 1.35), baseMat);
   plinth.position.y = 0.35;
@@ -795,9 +821,9 @@ function applyPodiumTheme(theme: MapTheme) {
   podiumGroup.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return;
     if (child.name === "podium-first") {
-      child.material = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.18, roughness: 0.36, metalness: 0.42 });
+      child.material = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.08, roughness: 0.42, metalness: 0.42 });
     } else if (child.name === "podium-side") {
-      child.material = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.14, roughness: 0.48, metalness: 0.26 });
+      child.material = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.06, roughness: 0.52, metalness: 0.26 });
     } else if (child.name === "podium-base") {
       child.material = new THREE.MeshStandardMaterial({ color: 0x111820, roughness: 0.72, metalness: 0.25 });
     }
@@ -806,10 +832,10 @@ function applyPodiumTheme(theme: MapTheme) {
 
 function buildPowerUps() {
   const placements: Array<[PowerUpType, number, number]> = [
-    ["rainbowTeeth", -18, 9],
-    ["chompRam", 18, 8],
-    ["hayRepair", -14, -18],
-    ["goldHooves", 15, -16],
+    ["rainbowTeeth", -22, 11],
+    ["chompRam", 22, 10],
+    ["hayRepair", -17, -22],
+    ["goldHooves", 18, -20],
   ];
   for (const [type, x, z] of placements) {
     const group = createPowerUpMesh(type);
