@@ -1,0 +1,18 @@
+- generic [ref=e2]:
+  - generic:
+    - generic:
+      - strong: Donkey Derby
+      - generic: 0 mph
+      - generic: Damage 0%
+      - generic: Hits 0
+      - generic: Power none
+      - generic: Map Neon Junkyard Bowl
+    - generic:
+      - generic: WASD drive
+      - generic: Space handbrake
+      - generic: C customize
+      - generic: R reset
+      - generic: M map
+      - generic: P passenger
+  - button "Open garage" [ref=e4] [cursor=pointer]: C
+  - generic: Wreck rival cars before yours falls apart.

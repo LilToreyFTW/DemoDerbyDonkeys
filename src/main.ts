@@ -1,5 +1,8 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import donkeyDriverUrl from "./assets/donkey-driver.glb?url";
+import derbyCarUrl from "./assets/derby-car.glb?url";
 import "./style.css";
 
 type BodyKit = "wedge" | "tank" | "lowrider";
@@ -12,7 +15,7 @@ interface MapTheme {
   neonA: number;
   neonB: number;
   accent: number;
-  props: "arcade" | "vhs" | "rink" | "pizza" | "mall" | "drivein" | "skatepark" | "subway";
+  props: "junkyard" | "foodcourt" | "laserRink" | "arcade" | "vhs" | "rink" | "pizza" | "mall" | "drivein" | "skatepark" | "subway";
 }
 
 interface Customization {
@@ -25,6 +28,12 @@ interface Customization {
 interface Driver {
   group: THREE.Group;
   teeth: THREE.Mesh[];
+}
+
+interface CarVisualDamage {
+  parts: Map<string, THREE.Object3D>;
+  base: Map<string, { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 }>;
+  detached: Set<string>;
 }
 
 interface ChampionPassenger {
@@ -41,6 +50,8 @@ interface DebrisPiece {
   velocity: THREE.Vector3;
   spin: THREE.Vector3;
   life: number;
+  body?: RAPIER.RigidBody;
+  collider?: RAPIER.Collider;
 }
 
 interface PowerUp {
@@ -65,12 +76,16 @@ interface Car {
   body: RAPIER.RigidBody;
   collider: RAPIER.Collider;
   driver: Driver;
+  visualShell?: THREE.Group;
+  visualDamage?: CarVisualDamage;
   championPassenger?: ChampionPassenger;
   damage: number;
   scoreValue: number;
   isPlayer: boolean;
   aiAngle: number;
   lastHitAt: number;
+  lastWallHitAt: number;
+  preStepVelocity: THREE.Vector3;
   smokeTimer: number;
 }
 
@@ -148,8 +163,13 @@ let audioMaster: GainNode | null = null;
 let engineOsc: OscillatorNode | null = null;
 let engineGain: GainNode | null = null;
 let donkeySoundCooldown = 0;
+let donkeyDriverTemplate: THREE.Group | null = null;
+let derbyCarTemplate: THREE.Group | null = null;
 
 const mapThemes: MapTheme[] = [
+  { name: "Neon Junkyard Bowl", floor: 0x252a25, grid: 0x54f2a8, neonA: 0xffd43b, neonB: 0x36d7ff, accent: 0xff5b39, props: "junkyard" },
+  { name: "Mall Food Court Derby", floor: 0x273038, grid: 0xff75c8, neonA: 0x31f0ff, neonB: 0xffd43b, accent: 0xff4f38, props: "foodcourt" },
+  { name: "Laser Roller Rink", floor: 0x18313a, grid: 0xfff14d, neonA: 0xff4fd8, neonB: 0x5eff7e, accent: 0x47b4ff, props: "laserRink" },
   { name: "Neon Arcade", floor: 0x221b35, grid: 0xff4fd8, neonA: 0x46b5ff, neonB: 0xff3bd5, accent: 0xffd95a, props: "arcade" },
   { name: "VHS Parking Lot", floor: 0x302538, grid: 0x79ffe1, neonA: 0xff4f38, neonB: 0x7c5cff, accent: 0xf7f0df, props: "vhs" },
   { name: "Laser Roller Rink", floor: 0x18313a, grid: 0xfff14d, neonA: 0xff4fd8, neonB: 0x5eff7e, accent: 0x47b4ff, props: "rink" },
@@ -164,7 +184,7 @@ let currentMapIndex = 0;
 void boot();
 
 async function boot() {
-  await RAPIER.init();
+  await Promise.all([RAPIER.init(), loadDonkeyDriverModel(), loadDerbyCarModel()]);
   world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   buildArena();
   podiumGroup = buildVictoryPodium();
@@ -181,6 +201,38 @@ async function boot() {
   bindEvents();
   resize();
   renderer.setAnimationLoop(loop);
+}
+
+async function loadDonkeyDriverModel() {
+  try {
+    const gltf = await new GLTFLoader().loadAsync(donkeyDriverUrl);
+    donkeyDriverTemplate = gltf.scene;
+    donkeyDriverTemplate.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+  } catch (error) {
+    console.warn("Could not load donkey driver GLB; using procedural fallback.", error);
+    donkeyDriverTemplate = null;
+  }
+}
+
+async function loadDerbyCarModel() {
+  try {
+    const gltf = await new GLTFLoader().loadAsync(derbyCarUrl);
+    derbyCarTemplate = gltf.scene;
+    derbyCarTemplate.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+  } catch (error) {
+    console.warn("Could not load derby car GLB; using procedural car.", error);
+    derbyCarTemplate = null;
+  }
 }
 
 function buildArena() {
@@ -356,7 +408,13 @@ function buildMapProps(theme: MapTheme) {
   const matB = new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.4, roughness: 0.55, metalness: 0.1 });
   const matAccent = new THREE.MeshStandardMaterial({ color: theme.accent, roughness: 0.72, metalness: 0.15 });
 
-  if (theme.props === "arcade") {
+  if (theme.props === "junkyard") {
+    buildJunkyardBowl(theme, matA, matB, matAccent);
+  } else if (theme.props === "foodcourt") {
+    buildFoodCourtDerby(theme, matA, matB, matAccent);
+  } else if (theme.props === "laserRink") {
+    buildLaserRollerRink(theme, matA, matB, matAccent);
+  } else if (theme.props === "arcade") {
     addPropWall(-25, -5, 1.8, 4, 3, matA);
     addPropWall(24, 7, 1.8, 4, 3, matB);
     addPropWall(0, -24, 8, 1.2, 2.2, matAccent);
@@ -390,24 +448,209 @@ function buildMapProps(theme: MapTheme) {
   addHistoricalArchiveKiosk(theme);
 }
 
-function addPropWall(x: number, z: number, width: number, depth: number, height: number, material: THREE.Material) {
+function buildJunkyardBowl(theme: MapTheme, matA: THREE.Material, matB: THREE.Material, matAccent: THREE.Material) {
+  const scrapMat = new THREE.MeshStandardMaterial({ color: 0x6f756f, roughness: 0.86, metalness: 0.38 });
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x0b0c0c, roughness: 0.94 });
+  const hazardMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.25, roughness: 0.62 });
+
+  addCraneSetPiece(theme);
+  addPropWall(-18, -15, 9, 1.1, 1.8, scrapMat, -0.35);
+  addPropWall(19, 14, 9, 1.1, 1.8, scrapMat, -0.35);
+  addPropWall(-23, 8, 1.2, 8, 2.2, matA, 0.22);
+  addPropWall(23, -8, 1.2, 8, 2.2, matB, 0.22);
+  addRamp(-10, 10, 6.5, 3.2, matAccent, -0.35, 0.5);
+  addRamp(11, -11, 6.5, 3.2, matAccent, 0.35, -0.45);
+
+  for (const [x, z, rotation] of [[-9, -23, 0.2], [8, 23, -0.25], [-27, -2, 1.35], [27, 2, -1.35]] as Array<[number, number, number]>) {
+    addPropWall(x, z, 4.7, 1, 1.1, hazardMat, rotation);
+  }
+
+  for (let i = 0; i < 10; i += 1) {
+    const angle = (i / 10) * Math.PI * 2 + 0.18;
+    const radius = i % 2 === 0 ? 30 : 34;
+    addTireStack(Math.cos(angle) * radius, Math.sin(angle) * radius, tireMat, 2 + (i % 3));
+  }
+}
+
+function buildFoodCourtDerby(theme: MapTheme, matA: THREE.Material, matB: THREE.Material, matAccent: THREE.Material) {
+  const tileMat = new THREE.MeshStandardMaterial({ color: 0xd7d1c2, roughness: 0.72, metalness: 0.04 });
+  const planterMat = new THREE.MeshStandardMaterial({ color: 0x2f6f51, roughness: 0.84 });
+  const counterMat = new THREE.MeshStandardMaterial({ color: 0x101820, roughness: 0.68, metalness: 0.22 });
+
+  addFoodKiosk(-18, -12, "TACO", matA, counterMat, theme);
+  addFoodKiosk(18, 12, "PIZZA", matB, counterMat, theme);
+  addFoodKiosk(-17, 14, "BUBBLE", matAccent, counterMat, theme);
+  addPropWall(0, -23, 14, 1, 2.4, matA);
+  addPropWall(0, 23, 14, 1, 2.4, matB);
+  addEscalatorRamp(-7, 0, matAccent, -0.28);
+  addEscalatorRamp(7, 0, matAccent, 0.28);
+
+  for (const [x, z] of [[-6, -14], [7, -14], [-7, 15], [6, 15], [-24, 0], [24, 0]] as Array<[number, number]>) {
+    addPlanter(x, z, tileMat, planterMat);
+  }
+}
+
+function buildLaserRollerRink(theme: MapTheme, matA: THREE.Material, matB: THREE.Material, matAccent: THREE.Material) {
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x101014, roughness: 0.62, metalness: 0.28 });
+  const discoMat = new THREE.MeshStandardMaterial({ color: 0xf7f0df, roughness: 0.24, metalness: 0.75 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.92, roughness: 0.32 });
+
+  addDiscoCenterpiece(theme, discoMat);
+  addPropWall(-18, 0, 1, 18, 1.15, railMat);
+  addPropWall(18, 0, 1, 18, 1.15, railMat);
+  addPropWall(0, -19, 18, 1, 1.15, railMat);
+  addPropWall(0, 19, 18, 1, 1.15, railMat);
+  addRamp(-12, -12, 7, 3, matA, -0.28, 0.65);
+  addRamp(12, 12, 7, 3, matB, 0.28, -0.65);
+  for (let i = 0; i < 8; i += 1) {
+    const angle = (i / 8) * Math.PI * 2;
+    addLaserPylon(Math.cos(angle) * 27, Math.sin(angle) * 27, glowMat, theme, -angle);
+  }
+  addPropWall(-27, 0, 0.55, 8, 2.8, matAccent, 0.3);
+  addPropWall(27, 0, 0.55, 8, 2.8, matAccent, -0.3);
+}
+
+function addCraneSetPiece(theme: MapTheme) {
+  const steelMat = new THREE.MeshStandardMaterial({ color: 0x2d3637, roughness: 0.58, metalness: 0.62 });
+  const hookMat = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.22, roughness: 0.45, metalness: 0.45 });
+  const crane = new THREE.Group();
+  crane.position.set(0, 0, -29);
+  mapGroup.add(crane);
+
+  const mast = new THREE.Mesh(new THREE.BoxGeometry(1, 8.5, 1), steelMat);
+  mast.position.y = 4.25;
+  mast.castShadow = true;
+  crane.add(mast);
+
+  const boom = new THREE.Mesh(new THREE.BoxGeometry(14, 0.55, 0.55), steelMat);
+  boom.position.set(4.8, 8.1, 0);
+  boom.rotation.z = -0.12;
+  boom.castShadow = true;
+  crane.add(boom);
+
+  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 4.2, 8), steelMat);
+  cable.position.set(9.6, 5.9, 0);
+  crane.add(cable);
+
+  const magnet = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.42, 24), hookMat);
+  magnet.position.set(9.6, 3.7, 0);
+  magnet.rotation.x = Math.PI / 2;
+  magnet.castShadow = true;
+  crane.add(magnet);
+
+  addPropWall(0, -29, 1.4, 1.4, 2.2, steelMat);
+}
+
+function addTireStack(x: number, z: number, material: THREE.Material, count: number) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  mapGroup.add(group);
+  for (let i = 0; i < count; i += 1) {
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.18, 10, 18), material);
+    tire.position.y = 0.28 + i * 0.34;
+    tire.rotation.x = Math.PI / 2;
+    tire.rotation.z = i * 0.27;
+    tire.castShadow = true;
+    group.add(tire);
+  }
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, 0.65, z));
+  world.createCollider(RAPIER.ColliderDesc.cylinder(0.85, 0.72).setFriction(1).setRestitution(0.28), body);
+  mapBodies.push(body);
+}
+
+function addFoodKiosk(x: number, z: number, label: string, signMat: THREE.Material, counterMat: THREE.Material, theme: MapTheme) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  group.lookAt(0, 0, 0);
+  mapGroup.add(group);
+
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(6.2, 1.15, 2.2), counterMat);
+  counter.position.y = 0.58;
+  counter.castShadow = true;
+  counter.receiveShadow = true;
+  group.add(counter);
+
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.72, 0.18), signMat);
+  sign.position.set(0, 2.15, -1.16);
+  sign.castShadow = true;
+  group.add(sign);
+
+  for (let i = 0; i < label.length; i += 1) {
+    const light = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.08), new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.8 }));
+    light.position.set((i - label.length / 2) * 0.55 + 0.25, 2.15, -1.29);
+    group.add(light);
+  }
+
+  const worldPosition = new THREE.Vector3();
+  group.getWorldPosition(worldPosition);
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(worldPosition.x, 0.7, worldPosition.z).setRotation({ x: 0, y: group.quaternion.y, z: 0, w: group.quaternion.w }));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(3.1, 0.75, 1.1).setFriction(0.9).setRestitution(0.25), body);
+  mapBodies.push(body);
+}
+
+function addPlanter(x: number, z: number, baseMat: THREE.Material, plantMat: THREE.Material) {
+  addPropWall(x, z, 3.4, 1.2, 0.75, baseMat, Math.random() * 0.35);
+  const plant = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 1), plantMat);
+  plant.position.set(x, 1.1, z);
+  plant.scale.set(1.4, 0.58, 0.72);
+  plant.castShadow = true;
+  mapGroup.add(plant);
+}
+
+function addEscalatorRamp(x: number, z: number, material: THREE.Material, tilt: number) {
+  addRamp(x, z, 4.2, 8, material, tilt, x < 0 ? 0.45 : -0.45);
+  addPropWall(x + (x < 0 ? -2.5 : 2.5), z, 0.35, 8.5, 1.2, material);
+}
+
+function addDiscoCenterpiece(theme: MapTheme, discoMat: THREE.Material) {
+  const group = new THREE.Group();
+  group.position.set(0, 0, 0);
+  mapGroup.add(group);
+  const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 2), discoMat);
+  ball.position.y = 4.6;
+  ball.castShadow = true;
+  group.add(ball);
+  for (let i = 0; i < 12; i += 1) {
+    const angle = (i / 12) * Math.PI * 2;
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 10), new THREE.MeshStandardMaterial({ color: i % 2 ? theme.neonA : theme.neonB, emissive: i % 2 ? theme.neonA : theme.neonB, emissiveIntensity: 0.9, transparent: true, opacity: 0.72 }));
+    beam.position.set(Math.cos(angle) * 4.8, 3.8, Math.sin(angle) * 4.8);
+    beam.rotation.y = -angle;
+    group.add(beam);
+  }
+}
+
+function addLaserPylon(x: number, z: number, material: THREE.Material, theme: MapTheme, rotationY: number) {
+  addPropWall(x, z, 0.75, 0.75, 3.4, material, rotationY);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 7.5), new THREE.MeshStandardMaterial({ color: theme.neonB, emissive: theme.neonB, emissiveIntensity: 0.8, transparent: true, opacity: 0.62 }));
+  beam.position.set(x, 2.4, z);
+  beam.rotation.y = rotationY;
+  mapGroup.add(beam);
+}
+
+function addPropWall(x: number, z: number, width: number, depth: number, height: number, material: THREE.Material, rotationY = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
   mesh.position.set(x, height / 2, z);
+  mesh.rotation.y = rotationY;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mapGroup.add(mesh);
-  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, height / 2, z));
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, height / 2, z).setRotation({ x: 0, y: Math.sin(rotationY / 2), z: 0, w: Math.cos(rotationY / 2) }));
   world.createCollider(RAPIER.ColliderDesc.cuboid(width / 2, height / 2, depth / 2).setFriction(0.8).setRestitution(0.35), body);
   mapBodies.push(body);
 }
 
-function addRamp(x: number, z: number, width: number, depth: number, material: THREE.Material, tilt: number) {
+function addRamp(x: number, z: number, width: number, depth: number, material: THREE.Material, tilt: number, rotationY = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 0.5, depth), material);
   mesh.position.set(x, 0.35, z);
   mesh.rotation.x = tilt;
+  mesh.rotation.y = rotationY;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mapGroup.add(mesh);
+  const q = new THREE.Quaternion().setFromEuler(mesh.rotation);
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, 0.35, z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
+  world.createCollider(RAPIER.ColliderDesc.cuboid(width / 2, 0.25, depth / 2).setFriction(1.15).setRestitution(0.08), body);
+  mapBodies.push(body);
 }
 
 function addHistoricalArchiveKiosk(theme: MapTheme) {
@@ -717,6 +960,28 @@ function createCar(id: string, position: THREE.Vector3, color: number, isPlayer:
   ramLower.castShadow = true;
   group.add(ramLower);
 
+  const visualShell = createDerbyCarVisual(color, isPlayer ? 0xffe45e : 0x202020);
+  const visualDamage = visualShell ? createCarVisualDamage(visualShell) : undefined;
+  if (visualShell) {
+    chassis.visible = false;
+    hood.visible = false;
+    trunk.visible = false;
+    stripe.visible = false;
+    cabin.visible = false;
+    ram.visible = false;
+    ramLower.visible = false;
+    for (const dent of dents) {
+      dent.visible = false;
+    }
+    for (const mark of damageMarks) {
+      mark.visible = false;
+    }
+    for (const wheel of wheels) {
+      wheel.visible = false;
+    }
+    group.add(visualShell);
+  }
+
   const driver = createDonkeyDriver(isPlayer ? 0xb88759 : 0x957256);
   driver.group.position.set(0, 2.88, -0.02);
   driver.group.rotation.y = 0;
@@ -743,7 +1008,93 @@ function createCar(id: string, position: THREE.Vector3, color: number, isPlayer:
     body,
   );
 
-  return { id, group, chassis, stripe, cabin, ram, wheels, dents, damageMarks, dentLevels, body, collider, driver, championPassenger, damage: 0, scoreValue: 1, isPlayer, aiAngle: Math.random() * Math.PI * 2, lastHitAt: 0, smokeTimer: 0 };
+  return {
+    id,
+    group,
+    chassis,
+    stripe,
+    cabin,
+    ram,
+    wheels,
+    dents,
+    damageMarks,
+    dentLevels,
+    body,
+    collider,
+    driver,
+    visualShell,
+    visualDamage,
+    championPassenger,
+    damage: 0,
+    scoreValue: 1,
+    isPlayer,
+    aiAngle: Math.random() * Math.PI * 2,
+    lastHitAt: 0,
+    lastWallHitAt: 0,
+    preStepVelocity: new THREE.Vector3(),
+    smokeTimer: 0,
+  };
+}
+
+function createDerbyCarVisual(paintColor: number, stripeColor: number) {
+  if (!derbyCarTemplate) return undefined;
+
+  const visual = derbyCarTemplate.clone(true);
+  tintDerbyCarVisual(visual, paintColor, stripeColor);
+  visual.position.set(0, 0.04, 0);
+  visual.rotation.y = Math.PI;
+  visual.scale.setScalar(1);
+  return visual;
+}
+
+function tintDerbyCarVisual(visual: THREE.Object3D, paintColor: number | string, stripeColor: number | string) {
+  const paintTint = new THREE.Color(paintColor);
+  const stripeTint = new THREE.Color(stripeColor);
+  visual.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.material = cloneMaterial(child.material);
+
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      if (!(material instanceof THREE.MeshStandardMaterial)) continue;
+      if (material.name.startsWith("car paint tintable")) {
+        material.color.copy(paintTint);
+      } else if (material.name.startsWith("car stripe tintable")) {
+        material.color.copy(stripeTint);
+      }
+    }
+  });
+}
+
+function createCarVisualDamage(visual: THREE.Group): CarVisualDamage {
+  const parts = new Map<string, THREE.Object3D>();
+  const base = new Map<string, { position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3 }>();
+  visual.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.name.startsWith("Car_")) return;
+    parts.set(child.name, child);
+    base.set(child.name, {
+      position: child.position.clone(),
+      rotation: child.rotation.clone(),
+      scale: child.scale.clone(),
+    });
+  });
+  return { parts, base, detached: new Set<string>() };
+}
+
+function resetCarVisualDamage(car: Car) {
+  if (!car.visualShell || !car.visualDamage) return;
+  car.visualShell.visible = true;
+  car.visualDamage.detached.clear();
+  car.visualDamage.parts.forEach((part, name) => {
+    const base = car.visualDamage?.base.get(name);
+    if (!base) return;
+    part.visible = true;
+    part.position.copy(base.position);
+    part.rotation.copy(base.rotation);
+    part.scale.copy(base.scale);
+  });
 }
 
 function addCarShellDetails(group: THREE.Group, paintMat: THREE.Material, trimMat: THREE.Material, chromeMat: THREE.Material, glassMat: THREE.Material) {
@@ -874,6 +1225,42 @@ function createDamageMarks() {
 }
 
 function createDonkeyDriver(color: number): Driver {
+  if (!donkeyDriverTemplate) return createProceduralDonkeyDriver(color);
+
+  const model = donkeyDriverTemplate.clone(true);
+  const group = new THREE.Group();
+  const teeth: THREE.Mesh[] = [];
+  const hideColor = new THREE.Color(color);
+
+  model.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.material = cloneMaterial(child.material);
+
+    const material = Array.isArray(child.material) ? child.material[0] : child.material;
+    if (material instanceof THREE.MeshStandardMaterial && material.name.startsWith("warm donkey hide")) {
+      material.color.copy(hideColor);
+    }
+
+    if (child.name.startsWith("Driver_Tooth")) {
+      teeth.push(child);
+    }
+  });
+
+  teeth.sort((a, b) => a.name.localeCompare(b.name));
+  model.rotation.y = Math.PI;
+  model.position.set(0, -0.62, 0.02);
+  model.scale.setScalar(0.82);
+  group.add(model);
+  return { group, teeth };
+}
+
+function cloneMaterial(material: THREE.Material | THREE.Material[]) {
+  return Array.isArray(material) ? material.map((item) => item.clone()) : material.clone();
+}
+
+function createProceduralDonkeyDriver(color: number): Driver {
   const group = new THREE.Group();
   const hide = new THREE.MeshStandardMaterial({ color, roughness: 0.78 });
   const lightHide = new THREE.MeshStandardMaterial({ color: 0xd0a06f, roughness: 0.8 });
@@ -1203,7 +1590,9 @@ function loop() {
   const dt = Math.min(clock.getDelta(), 0.033);
   handlePlayer(dt);
   updateAi(dt);
+  capturePreStepVelocities();
   world.step();
+  scoreWallCollisions();
   syncCars();
   updateChampionPassenger(dt);
   updateProgressiveDamage(dt);
@@ -1220,27 +1609,30 @@ function loop() {
 
 function handlePlayer(dt: number) {
   if (victory) return;
-  const fwd = forwardOf(player.body);
-  const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
   const throttle = (pressed("w", "arrowup") ? 1 : 0) - (pressed("s", "arrowdown") ? 0.72 : 0);
   const steer = (pressed("a", "arrowleft") ? 1 : 0) - (pressed("d", "arrowright") ? 1 : 0);
   const handbrake = keys.has(" ");
-  const velocity = player.body.linvel();
-  const angular = player.body.angvel();
+  const speedBoost = activePower === "goldHooves" ? 1.45 : 1;
+  applyCarControls(player, throttle, steer, handbrake, dt, 17 * speedBoost);
+}
+
+function applyCarControls(car: Car, throttle: number, steer: number, handbrake: boolean, dt: number, maxForward: number) {
+  const fwd = forwardOf(car.body);
+  const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+  const velocity = car.body.linvel();
+  const angular = car.body.angvel();
   const forwardSpeed = velocity.x * fwd.x + velocity.z * fwd.z;
   const sideSpeed = velocity.x * right.x + velocity.z * right.z;
-  const speedBoost = activePower === "goldHooves" ? 1.45 : 1;
-  const maxForward = (handbrake ? 7.5 : 17) * speedBoost;
-  const maxReverse = 8;
-  const targetForward = throttle >= 0 ? throttle * maxForward : throttle * maxReverse;
-  const driveSharpness = throttle === 0 ? 3.4 : 7.8;
+  const maxDrive = handbrake ? Math.min(maxForward, 8) : maxForward;
+  const targetForward = throttle >= 0 ? throttle * maxDrive : throttle * 8;
+  const driveSharpness = Math.abs(throttle) < 0.05 ? 3.4 : 7.8;
   const grip = handbrake ? 2.2 : 10.5;
   const nextForward = THREE.MathUtils.damp(forwardSpeed, targetForward, driveSharpness, dt);
   const nextSide = THREE.MathUtils.damp(sideSpeed, 0, grip, dt);
   const steerDirection = nextForward < -0.4 ? -1 : 1;
   const steerRate = steer * steerDirection * (1.3 + Math.min(Math.abs(nextForward) / 12, 1) * 2.1);
 
-  player.body.setLinvel(
+  car.body.setLinvel(
     {
       x: fwd.x * nextForward + right.x * nextSide,
       y: velocity.y,
@@ -1248,21 +1640,67 @@ function handlePlayer(dt: number) {
     },
     true,
   );
-  player.body.setAngvel({ x: angular.x * 0.2, y: THREE.MathUtils.damp(angular.y, steerRate, steer === 0 ? 8 : 12, dt), z: angular.z * 0.2 }, true);
+  car.body.setAngvel({ x: angular.x * 0.2, y: THREE.MathUtils.damp(angular.y, steerRate, Math.abs(steer) < 0.05 ? 8 : 12, dt), z: angular.z * 0.2 }, true);
 }
 
 function updateAi(dt: number) {
   if (victory) return;
-  const target = player.body.translation();
   for (const car of cars) {
     if (car.isPlayer || car.damage >= 100) continue;
+    const targetCar = chooseAiTarget(car);
     const pos = car.body.translation();
-    const desired = Math.atan2(target.x - pos.x, target.z - pos.z);
+    const target = targetCar.body.translation();
+    const toTarget = new THREE.Vector3(target.x - pos.x, 0, target.z - pos.z);
+    const distance = Math.max(0.001, toTarget.length());
+    const arenaDistance = Math.hypot(pos.x, pos.z);
+    const targetLead = targetCar.body.linvel();
+    const leadScale = clamp(distance / 18, 0.15, 0.75);
+    const desiredPoint = new THREE.Vector3(target.x + targetLead.x * leadScale, 0, target.z + targetLead.z * leadScale);
+
+    if (arenaDistance > 35) {
+      desiredPoint.set(0, 0, 0);
+    } else if (distance < 5.5) {
+      const fwd = forwardOf(car.body);
+      desiredPoint.add(fwd.multiplyScalar(3.8));
+    }
+
+    const desired = Math.atan2(desiredPoint.x - pos.x, desiredPoint.z - pos.z);
     const current = yawOf(car.body);
-    const turn = clamp(angleDelta(current, desired), -1, 1);
-    const distance = Math.hypot(target.x - pos.x, target.z - pos.z);
-    car.body.applyTorqueImpulse({ x: 0, y: turn * 6 * dt, z: 0 }, true);
-    car.body.applyImpulse({ ...scaledForward(car.body, distance > 8 ? 24 * dt : 13 * dt), y: 0 }, true);
+    const turnError = angleDelta(current, desired);
+    const steer = clamp(turnError * 1.45, -1, 1);
+    const aligned = Math.cos(turnError);
+    const stuck = speedOf(car.body) < 0.55 && distance > 7;
+    const throttle = stuck ? -0.45 : clamp(0.35 + aligned * 0.75, -0.35, 1);
+    const handbrake = Math.abs(turnError) > 1.65 && speedOf(car.body) > 5.5;
+
+    car.aiAngle += dt * (0.8 + distance * 0.025);
+    applyCarControls(car, throttle, steer, handbrake, dt, 14.5);
+  }
+}
+
+function chooseAiTarget(car: Car) {
+  let best = player;
+  let bestScore = Number.POSITIVE_INFINITY;
+  const pos = car.body.translation();
+  for (const candidate of cars) {
+    if (candidate === car || candidate.damage >= 100) continue;
+    const c = candidate.body.translation();
+    const distance = Math.hypot(c.x - pos.x, c.z - pos.z);
+    const playerBias = candidate.isPlayer ? -8 : 0;
+    const woundedBias = candidate.damage * -0.035;
+    const score = distance + playerBias + woundedBias;
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function capturePreStepVelocities() {
+  for (const car of cars) {
+    const velocity = car.body.linvel();
+    car.preStepVelocity.set(velocity.x, velocity.y, velocity.z);
   }
 }
 
@@ -1289,69 +1727,237 @@ function syncCars() {
       wheel.rotation.y = Math.sin(performance.now() * 0.012 + index) * wheelDamage * 0.35;
       wheel.rotation.x = (index % 2 === 0 ? 1 : -1) * wheelDamage * 0.22;
     });
-    car.dents.forEach((dent, index) => {
-      const level = car.dentLevels[index];
-      dent.visible = level > 0.04;
-      const bulge = 0.75 + level * 2.4;
-      if (index < 2) {
-        dent.scale.set(bulge, 0.7 + level * 1.7, 1);
-        dent.position.z = index === 0 ? -2.72 - level * 0.1 : 2.72 + level * 0.1;
-      } else {
-        dent.scale.set(1, 0.7 + level * 1.55, bulge);
-        dent.position.x = index === 2 ? -1.78 - level * 0.1 : 1.78 + level * 0.1;
-      }
-    });
-    car.damageMarks.forEach((mark, index) => {
-      mark.visible = car.damage > 5 + index * 8;
-      const throb = 1 + Math.min(0.65, car.damage / 140);
-      mark.scale.setScalar(mark.visible ? throb : 1);
-    });
+    if (car.visualShell) {
+      car.dents.forEach((dent) => {
+        dent.visible = false;
+      });
+      car.damageMarks.forEach((mark) => {
+        mark.visible = false;
+      });
+    } else {
+      car.dents.forEach((dent, index) => {
+        const level = car.dentLevels[index];
+        dent.visible = level > 0.04;
+        const bulge = 0.75 + level * 2.4;
+        if (index < 2) {
+          dent.scale.set(bulge, 0.7 + level * 1.7, 1);
+          dent.position.z = index === 0 ? -2.72 - level * 0.1 : 2.72 + level * 0.1;
+        } else {
+          dent.scale.set(1, 0.7 + level * 1.55, bulge);
+          dent.position.x = index === 2 ? -1.78 - level * 0.1 : 1.78 + level * 0.1;
+        }
+      });
+      car.damageMarks.forEach((mark, index) => {
+        mark.visible = car.damage > 5 + index * 8;
+        const throb = 1 + Math.min(0.65, car.damage / 140);
+        mark.scale.setScalar(mark.visible ? throb : 1);
+      });
+    }
+    updateCarVisualDamage(car, damageRatio);
     car.group.visible = true;
+  }
+}
+
+function updateCarVisualDamage(car: Car, damageRatio: number) {
+  const visual = car.visualDamage;
+  if (!visual) return;
+
+  const now = performance.now() * 0.001;
+  const front = car.dentLevels[0];
+  const rear = car.dentLevels[1];
+  const left = car.dentLevels[2];
+  const right = car.dentLevels[3];
+  const wobble = Math.sin(now * 18 + car.aiAngle) * damageRatio;
+
+  setVisualPartTransform(visual, "Car_Chassis", { scale: [1 - (left + right) * 0.035, 1 - (front + rear) * 0.045, 1 - damageRatio * 0.08], rotation: [0, 0, (left - right) * 0.035] });
+  setVisualPartTransform(visual, "Car_Hood_Wedge", { position: [0, front * 0.16, -front * 0.12], rotation: [front * 0.35, 0, (right - left) * 0.07] });
+  setVisualPartTransform(visual, "Car_Trunk_Wedge", { position: [0, -rear * 0.12, -rear * 0.08], rotation: [-rear * 0.22, 0, (left - right) * 0.06] });
+  setVisualPartTransform(visual, "Car_Cabin_Base", { position: [(right - left) * 0.05, 0, -damageRatio * 0.16], rotation: [front * 0.1 - rear * 0.06, 0, (left - right) * 0.12] });
+  setVisualPartTransform(visual, "Car_Seat_Back", { rotation: [-rear * 0.22, 0, (left - right) * 0.1] });
+  setVisualPartTransform(visual, "Car_Dash", { rotation: [front * 0.16, 0, 0] });
+  setVisualPartTransform(visual, "Car_Front_Ram", { position: [(right - left) * 0.1, front * 0.26, -front * 0.18], rotation: [front * 0.48, 0, (left - right) * 0.2] });
+  setVisualPartTransform(visual, "Car_Front_Ram_Lower", { position: [(right - left) * 0.08, front * 0.32, -front * 0.16], rotation: [front * 0.42, 0, (left - right) * 0.16] });
+  setVisualPartTransform(visual, "Car_Stripe", { scale: [1 + damageRatio * 0.08, Math.max(0.72, 1 - (front + rear) * 0.08), 1], rotation: [0, 0, (left - right) * 0.04] });
+
+  for (const side of ["-1.9", "+1.9"]) {
+    const amount = side.startsWith("-") ? left : right;
+    setVisualPartTransform(visual, `Car_Side_Rail_${side}`, { position: [side.startsWith("-") ? -amount * 0.12 : amount * 0.12, 0, -amount * 0.1], rotation: [0, amount * 0.18, side.startsWith("-") ? -amount * 0.24 : amount * 0.24] });
+    setVisualPartTransform(visual, `Car_Side_Rocker_${side}`, { position: [side.startsWith("-") ? -amount * 0.08 : amount * 0.08, 0, -amount * 0.09], rotation: [0, amount * 0.08, side.startsWith("-") ? -amount * 0.16 : amount * 0.16] });
+  }
+
+  for (const wheel of ["FL", "FR", "RL", "RR"]) {
+    const sideLevel = wheel.endsWith("L") ? left : right;
+    const endLevel = wheel.startsWith("F") ? front : rear;
+    const wheelDamage = Math.min(1, damageRatio * 0.45 + sideLevel * 0.45 + endLevel * 0.2);
+    setVisualPartTransform(visual, `Car_Wheel_${wheel}`, {
+      position: [(wheel.endsWith("L") ? -1 : 1) * wheelDamage * 0.08, 0, -wheelDamage * 0.16],
+      rotation: [wobble * 0.25, 0, (wheel.endsWith("L") ? -1 : 1) * wheelDamage * 0.38],
+      scale: [1, 1, Math.max(0.62, 1 - wheelDamage * 0.2)],
+    });
+    setVisualPartTransform(visual, `Car_Rim_${wheel}`, {
+      position: [(wheel.endsWith("L") ? -1 : 1) * wheelDamage * 0.08, 0, -wheelDamage * 0.16],
+      rotation: [wobble * 0.25, 0, (wheel.endsWith("L") ? -1 : 1) * wheelDamage * 0.38],
+    });
+    setVisualPartTransform(visual, `Car_Fender_${wheel}`, {
+      position: [(wheel.endsWith("L") ? -1 : 1) * sideLevel * 0.08, 0, -endLevel * 0.1],
+      rotation: [endLevel * 0.08, 0, (wheel.endsWith("L") ? -1 : 1) * sideLevel * 0.24],
+    });
+  }
+}
+
+function setVisualPartTransform(
+  visual: CarVisualDamage,
+  name: string,
+  delta: { position?: THREE.Vector3Tuple; rotation?: THREE.Vector3Tuple; scale?: THREE.Vector3Tuple },
+) {
+  const part = visual.parts.get(name);
+  const base = visual.base.get(name);
+  if (!part || !base || visual.detached.has(name)) return;
+  part.position.copy(base.position);
+  part.rotation.copy(base.rotation);
+  part.scale.copy(base.scale);
+  if (delta.position) part.position.add(new THREE.Vector3(...delta.position));
+  if (delta.rotation) {
+    part.rotation.x += delta.rotation[0];
+    part.rotation.y += delta.rotation[1];
+    part.rotation.z += delta.rotation[2];
+  }
+  if (delta.scale) {
+    part.scale.multiply(new THREE.Vector3(...delta.scale));
   }
 }
 
 function scoreCollisions() {
   const now = performance.now();
-  for (const other of cars) {
-    if (other === player || other.damage >= 100) continue;
-    const a = player.body.translation();
-    const b = other.body.translation();
-    const dist = Math.hypot(a.x - b.x, a.z - b.z);
-    if (dist > 4.9 || now - other.lastHitAt < 260) continue;
-    const playerVelocity = player.body.linvel();
-    const otherVelocity = other.body.linvel();
-    const relativeSpeed = Math.hypot(playerVelocity.x - otherVelocity.x, playerVelocity.z - otherVelocity.z);
-    const impact = Math.max(relativeSpeed, speedOf(player.body) + speedOf(other.body) * 0.45);
-    if (impact < 1.15) continue;
-    const hitDirection = new THREE.Vector3(b.x - a.x, 0, b.z - a.z).normalize();
-    const hitPoint = new THREE.Vector3(b.x - hitDirection.x * 1.9, 1.05, b.z - hitDirection.z * 1.9);
-    const smash = Math.min(1, impact / 13);
-    const powerMultiplier = activePower === "rainbowTeeth" ? 1.55 : activePower === "chompRam" ? 1.85 : 1;
-    other.damage += (4 + impact * 5.8) * powerMultiplier;
-    player.damage += 1.4 + impact * 1.35;
-    other.lastHitAt = now;
-    playerHits += 1;
-    dentCar(other, hitDirection, impact);
-    throwCar(other, hitDirection, impact * powerMultiplier);
-    spawnImpactDebris(hitPoint, hitDirection, impact * powerMultiplier);
-    spawnDamageSmoke(other, hitPoint, impact);
-    if (activePower === "rainbowTeeth" || activePower === "chompRam") {
-      spawnPowerBurst(hitPoint, activePower);
-    }
-    playCrashSound(impact * powerMultiplier);
-    playDonkeyHitSound(impact);
-    cameraShake = Math.max(cameraShake, 0.16 + smash * 0.42 * powerMultiplier);
-    if (other.damage >= 100) {
-      blowApartCar(other, hitDirection, impact);
-      showMessage(`${other.id.toUpperCase()} wrecked`);
-      maybeEnterVictory();
-    } else {
-      showMessage(`Crushed panel +${Math.round(impact * 12)}`);
+  for (let i = 0; i < cars.length; i += 1) {
+    for (let j = i + 1; j < cars.length; j += 1) {
+      const aCar = cars[i];
+      const bCar = cars[j];
+      if (aCar.damage >= 100 || bCar.damage >= 100) continue;
+      if (now - aCar.lastHitAt < 260 || now - bCar.lastHitAt < 260) continue;
+
+      const a = aCar.body.translation();
+      const b = bCar.body.translation();
+      const dist = Math.hypot(a.x - b.x, a.z - b.z);
+      if (dist > 4.9) continue;
+
+      const aVelocity = aCar.body.linvel();
+      const bVelocity = bCar.body.linvel();
+      const relativeSpeed = Math.hypot(aVelocity.x - bVelocity.x, aVelocity.z - bVelocity.z);
+      const aSpeed = speedOf(aCar.body);
+      const bSpeed = speedOf(bCar.body);
+      const impact = Math.max(relativeSpeed, Math.max(aSpeed, bSpeed) + Math.min(aSpeed, bSpeed) * 0.35);
+      if (impact < 1.15) continue;
+
+      const hitDirection = new THREE.Vector3(b.x - a.x, 0, b.z - a.z).normalize();
+      const hitPoint = new THREE.Vector3((a.x + b.x) * 0.5, 1.05, (a.z + b.z) * 0.5);
+      const smash = Math.min(1, impact / 13);
+      const playerInvolved = aCar.isPlayer || bCar.isPlayer;
+      const playerPower = activePower === "rainbowTeeth" ? 1.55 : activePower === "chompRam" ? 1.85 : 1;
+      const aMultiplier = aCar.isPlayer ? playerPower : 1;
+      const bMultiplier = bCar.isPlayer ? playerPower : 1;
+      const aAttack = aSpeed + relativeSpeed * 0.45;
+      const bAttack = bSpeed + relativeSpeed * 0.45;
+      const damageToA = 1.2 + bAttack * 1.35 * bMultiplier;
+      const damageToB = 1.2 + aAttack * 1.35 * aMultiplier;
+
+      aCar.damage += damageToA;
+      bCar.damage += damageToB;
+      aCar.lastHitAt = now;
+      bCar.lastHitAt = now;
+      if (playerInvolved) playerHits += 1;
+
+      dentCar(aCar, hitDirection.clone().multiplyScalar(-1), impact);
+      dentCar(bCar, hitDirection, impact);
+      throwCar(aCar, hitDirection.clone().multiplyScalar(-1), impact * 0.75 * bMultiplier);
+      throwCar(bCar, hitDirection, impact * 0.75 * aMultiplier);
+      spawnImpactDebris(hitPoint, hitDirection, impact * Math.max(aMultiplier, bMultiplier));
+      spawnDamageSmoke(aCar, hitPoint, impact);
+      spawnDamageSmoke(bCar, hitPoint, impact);
+      if (playerInvolved && (activePower === "rainbowTeeth" || activePower === "chompRam")) {
+        spawnPowerBurst(hitPoint, activePower);
+      }
+      playCrashSound(impact * Math.max(aMultiplier, bMultiplier));
+      if (playerInvolved) playDonkeyHitSound(impact);
+      cameraShake = Math.max(cameraShake, 0.16 + smash * 0.42 * (playerInvolved ? playerPower : 0.85));
+
+      for (const car of [aCar, bCar]) {
+        if (car.damage < 100) continue;
+        const wreckDirection = car === aCar ? hitDirection.clone().multiplyScalar(-1) : hitDirection;
+        blowApartCar(car, wreckDirection, impact);
+        showMessage(`${car.id.toUpperCase()} wrecked`);
+        maybeEnterVictory();
+      }
+
+      if (aCar.damage < 100 && bCar.damage < 100 && playerInvolved) {
+        showMessage(`Heavy hit +${Math.round(impact * 12)}`);
+      }
     }
   }
   if (player.damage >= 100) {
     showMessage("Wrecked. Press R to reset.");
   }
+}
+
+function scoreWallCollisions() {
+  if (victory) return;
+  const now = performance.now();
+  for (const car of cars) {
+    if (car.damage >= 100 || now - car.lastWallHitAt < 340) continue;
+
+    const currentVelocityRaw = car.body.linvel();
+    const currentVelocity = new THREE.Vector3(currentVelocityRaw.x, currentVelocityRaw.y, currentVelocityRaw.z);
+    const before = car.preStepVelocity.clone();
+    before.y = 0;
+    currentVelocity.y = 0;
+    const previousSpeed = before.length();
+    if (previousSpeed < 6.5) continue;
+
+    const nearestCarDistance = distanceToNearestCar(car);
+    if (nearestCarDistance < 5.4) continue;
+
+    const velocityDelta = before.sub(currentVelocity);
+    const impact = velocityDelta.length();
+    const speedLoss = Math.max(0, previousSpeed - currentVelocity.length());
+    const wallSmash = Math.max(impact, speedLoss * 1.35);
+    if (wallSmash < 5.5) continue;
+
+    const crashDirection = car.preStepVelocity.clone();
+    crashDirection.y = 0;
+    if (crashDirection.lengthSq() < 0.001) continue;
+    crashDirection.normalize();
+
+    const pos = car.body.translation();
+    const hitPoint = new THREE.Vector3(pos.x + crashDirection.x * 2, 1.05, pos.z + crashDirection.z * 2);
+    const damage = (wallSmash - 4.5) * (car.isPlayer ? 2.35 : 1.9);
+    car.damage += damage;
+    car.lastWallHitAt = now;
+    dentCar(car, crashDirection, wallSmash);
+    spawnImpactDebris(hitPoint, crashDirection.clone().multiplyScalar(-1), wallSmash);
+    spawnDamageSmoke(car, hitPoint, wallSmash);
+    playCrashSound(wallSmash);
+    if (car.isPlayer) playDonkeyHitSound(wallSmash);
+    cameraShake = Math.max(cameraShake, 0.13 + Math.min(0.5, wallSmash / 22));
+
+    if (car.damage >= 100) {
+      blowApartCar(car, crashDirection.clone().multiplyScalar(-1), wallSmash);
+      showMessage(car.isPlayer ? "Totaled on the wall. Press R to reset." : `${car.id.toUpperCase()} wrecked`);
+      maybeEnterVictory();
+    } else if (car.isPlayer) {
+      showMessage(`Wall slam +${Math.round(damage)}`);
+    }
+  }
+}
+
+function distanceToNearestCar(car: Car) {
+  const pos = car.body.translation();
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const other of cars) {
+    if (other === car || other.damage >= 100) continue;
+    const otherPos = other.body.translation();
+    nearest = Math.min(nearest, Math.hypot(otherPos.x - pos.x, otherPos.z - pos.z));
+  }
+  return nearest;
 }
 
 function updateProgressiveDamage(dt: number) {
@@ -1583,6 +2189,28 @@ function dentCar(car: Car, worldDirection: THREE.Vector3, impact: number) {
   car.chassis.scale.x = Math.max(0.68, car.chassis.scale.x * bite);
   car.chassis.scale.z = Math.max(0.8, car.chassis.scale.z * (1 - Math.min(0.12, impact / 120)));
   car.stripe.scale.x = Math.max(0.55, car.stripe.scale.x * bite);
+  detachCarVisualPart(car, index, impact);
+}
+
+function detachCarVisualPart(car: Car, sideIndex: number, impact: number) {
+  if (!car.visualDamage || impact < 8) return;
+  const candidates = [
+    ["Car_Front_Ram", "Car_Front_Ram_Lower", "Car_Hood_Wedge", "Car_Headlight_-0.6", "Car_Headlight_+0.6"],
+    ["Car_Trunk_Wedge", "Car_Duct_Tape_Rear", "Car_Tail_Light_-0.6", "Car_Tail_Light_+0.6"],
+    ["Car_Side_Rail_-1.9", "Car_Side_Rocker_-1.9", "Car_Fender_FL", "Car_Fender_RL", "Car_Wheel_FL"],
+    ["Car_Side_Rail_+1.9", "Car_Side_Rocker_+1.9", "Car_Fender_FR", "Car_Fender_RR", "Car_Wheel_FR"],
+  ][sideIndex];
+  const available = candidates.filter((name) => !car.visualDamage!.detached.has(name) && car.visualDamage!.parts.has(name));
+  if (available.length === 0) return;
+  const threshold = impact > 13 ? 0.74 : 0.88;
+  if (Math.random() > threshold) {
+    const name = available[Math.floor(Math.random() * available.length)];
+    const part = car.visualDamage.parts.get(name);
+    if (!part) return;
+    car.visualDamage.detached.add(name);
+    part.visible = false;
+    spawnCarPartDebris(car, part, impact);
+  }
 }
 
 function throwCar(car: Car, direction: THREE.Vector3, impact: number) {
@@ -1624,6 +2252,77 @@ function spawnImpactDebris(position: THREE.Vector3, direction: THREE.Vector3, im
   }
 }
 
+function spawnCarPartDebris(car: Car, part: THREE.Object3D, impact: number) {
+  const worldPosition = new THREE.Vector3();
+  part.getWorldPosition(worldPosition);
+  const worldQuaternion = new THREE.Quaternion();
+  part.getWorldQuaternion(worldQuaternion);
+  const bounds = new THREE.Box3().setFromObject(part);
+  const size = bounds.getSize(new THREE.Vector3());
+  if (!Number.isFinite(size.x) || size.lengthSq() === 0) size.set(0.45, 0.22, 0.45);
+  size.set(clamp(size.x, 0.16, 1.9), clamp(size.y, 0.08, 0.75), clamp(size.z, 0.16, 1.9));
+
+  const worldScale = new THREE.Vector3();
+  part.getWorldScale(worldScale);
+  const mesh = cloneDebrisMesh(part, size);
+  mesh.position.copy(worldPosition);
+  mesh.quaternion.copy(worldQuaternion);
+  mesh.scale.copy(worldScale);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  const carVelocity = car.body.linvel();
+  const velocity = new THREE.Vector3(
+    carVelocity.x * 0.35 + (Math.random() - 0.5) * impact,
+    1.4 + Math.random() * impact * 0.25,
+    carVelocity.z * 0.35 + (Math.random() - 0.5) * impact,
+  );
+  const spin = new THREE.Vector3((Math.random() - 0.5) * impact, (Math.random() - 0.5) * impact * 1.4, (Math.random() - 0.5) * impact);
+  const body = world.createRigidBody(
+    RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(worldPosition.x, worldPosition.y, worldPosition.z)
+      .setRotation({ x: worldQuaternion.x, y: worldQuaternion.y, z: worldQuaternion.z, w: worldQuaternion.w })
+      .setLinearDamping(0.55)
+      .setAngularDamping(0.45),
+  );
+  const collider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid(size.x * 0.5, size.y * 0.5, size.z * 0.5)
+      .setDensity(0.32)
+      .setRestitution(0.22)
+      .setFriction(1.35),
+    body,
+  );
+  body.setLinvel({ x: velocity.x, y: velocity.y, z: velocity.z }, true);
+  body.setAngvel({ x: spin.x, y: spin.y, z: spin.z }, true);
+
+  debris.push({
+    mesh,
+    velocity,
+    spin,
+    life: 3 + Math.random() * 1.8,
+    body,
+    collider,
+  });
+}
+
+function pickDebrisMaterial(part: THREE.Object3D) {
+  if (part instanceof THREE.Mesh) {
+    const material = Array.isArray(part.material) ? part.material[0] : part.material;
+    if (material instanceof THREE.Material) return material.clone();
+  }
+  return new THREE.MeshStandardMaterial({ color: 0x8b8a7d, roughness: 0.6, metalness: 0.5 });
+}
+
+function cloneDebrisMesh(part: THREE.Object3D, fallbackSize: THREE.Vector3) {
+  if (part instanceof THREE.Mesh) {
+    const mesh = new THREE.Mesh(part.geometry.clone(), cloneMaterial(part.material));
+    mesh.name = `${part.name}_Debris`;
+    return mesh;
+  }
+  return new THREE.Mesh(new THREE.BoxGeometry(fallbackSize.x, fallbackSize.y, fallbackSize.z), pickDebrisMaterial(part));
+}
+
 function spawnDamageSmoke(car: Car, position: THREE.Vector3, impact: number) {
   if (car.damage < 18) return;
   const count = Math.min(16, 4 + Math.floor(car.damage / 14) + Math.floor(impact));
@@ -1644,6 +2343,16 @@ function spawnDamageSmoke(car: Car, position: THREE.Vector3, impact: number) {
 function blowApartCar(car: Car, direction: THREE.Vector3, impact: number) {
   const pos = car.body.translation();
   spawnImpactDebris(new THREE.Vector3(pos.x, 1.5, pos.z), direction, impact + 10);
+  if (car.visualDamage) {
+    const wreckParts = ["Car_Front_Ram", "Car_Hood_Wedge", "Car_Trunk_Wedge", "Car_Side_Rail_-1.9", "Car_Side_Rail_+1.9", "Car_Wheel_FL", "Car_Wheel_FR", "Car_Wheel_RL", "Car_Wheel_RR"];
+    for (const name of wreckParts) {
+      const part = car.visualDamage.parts.get(name);
+      if (!part || car.visualDamage.detached.has(name)) continue;
+      car.visualDamage.detached.add(name);
+      part.visible = false;
+      spawnCarPartDebris(car, part, impact + 6);
+    }
+  }
   for (const child of car.group.children) {
     if (child instanceof THREE.Mesh && child !== car.chassis) {
       child.visible = Math.random() > 0.35;
@@ -1655,18 +2364,26 @@ function updateDebris(dt: number) {
   for (let i = debris.length - 1; i >= 0; i -= 1) {
     const piece = debris[i];
     piece.life -= dt;
-    piece.velocity.y -= 11.5 * dt;
-    piece.mesh.position.addScaledVector(piece.velocity, dt);
-    piece.mesh.rotation.x += piece.spin.x * dt;
-    piece.mesh.rotation.y += piece.spin.y * dt;
-    piece.mesh.rotation.z += piece.spin.z * dt;
-    if (piece.mesh.position.y < 0.08) {
-      piece.mesh.position.y = 0.08;
-      piece.velocity.y *= -0.28;
-      piece.velocity.x *= 0.72;
-      piece.velocity.z *= 0.72;
+    if (piece.body) {
+      const position = piece.body.translation();
+      const rotation = piece.body.rotation();
+      piece.mesh.position.set(position.x, position.y, position.z);
+      piece.mesh.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    } else {
+      piece.velocity.y -= 11.5 * dt;
+      piece.mesh.position.addScaledVector(piece.velocity, dt);
+      piece.mesh.rotation.x += piece.spin.x * dt;
+      piece.mesh.rotation.y += piece.spin.y * dt;
+      piece.mesh.rotation.z += piece.spin.z * dt;
+      if (piece.mesh.position.y < 0.08) {
+        piece.mesh.position.y = 0.08;
+        piece.velocity.y *= -0.28;
+        piece.velocity.x *= 0.72;
+        piece.velocity.z *= 0.72;
+      }
     }
     if (piece.life <= 0) {
+      if (piece.body) world.removeRigidBody(piece.body);
       scene.remove(piece.mesh);
       piece.mesh.geometry.dispose();
       debris.splice(i, 1);
@@ -1916,6 +2633,9 @@ function toggleChampionPassenger() {
 function applyCustomization() {
   setMeshColor(player.chassis, customization.paint);
   setMeshColor(player.stripe, customization.stripe);
+  if (player.visualShell) {
+    tintDerbyCarVisual(player.visualShell, customization.paint, customization.stripe);
+  }
   const scaleByKit: Record<BodyKit, THREE.Vector3Tuple> = {
     wedge: [1, 1, 1],
     tank: [1.16, 1.2, 1.03],
@@ -1948,6 +2668,8 @@ function resetGame() {
   cars.forEach((car, index) => {
     car.damage = 0;
     car.lastHitAt = 0;
+    car.lastWallHitAt = 0;
+    car.preStepVelocity.set(0, 0, 0);
     car.dentLevels.fill(0);
     for (const child of car.group.children) {
       child.visible = true;
@@ -1968,6 +2690,7 @@ function resetGame() {
       mark.visible = false;
       mark.scale.set(1, 1, 1);
     }
+    resetCarVisualDamage(car);
     car.body.setTranslation(starts[index], true);
     car.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     car.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -1984,6 +2707,7 @@ function resetGame() {
   }
   while (debris.length > 0) {
     const piece = debris.pop()!;
+    if (piece.body) world.removeRigidBody(piece.body);
     scene.remove(piece.mesh);
     piece.mesh.geometry.dispose();
   }
