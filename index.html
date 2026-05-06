@@ -8,6 +8,33 @@
   <body>
     <div id="app">
       <canvas id="game"></canvas>
+      <section class="menu-screen" id="mainMenu" aria-label="Main menu">
+        <div class="menu-panel">
+          <p class="eyebrow">Online demolition derby</p>
+          <h1>Donkey Derby</h1>
+          <div class="menu-actions">
+            <button id="soloMode" type="button">Solo Derby</button>
+            <button id="hostOnline" type="button">Host Online</button>
+            <div class="join-row">
+              <input id="roomCode" type="text" maxlength="18" placeholder="Room code" />
+              <button id="joinOnline" type="button">Join</button>
+            </div>
+          </div>
+          <p id="menuStatus">Wreck the field, win the podium, bring the teeth.</p>
+        </div>
+      </section>
+      <section class="pause-screen" id="pauseMenu" aria-label="Pause menu">
+        <div class="pause-panel">
+          <header>
+            <strong>Paused</strong>
+            <button id="resumeGame" type="button">Resume</button>
+          </header>
+          <button id="pauseGarage" type="button">Garage</button>
+          <button id="pauseReset" type="button">Reset Derby</button>
+          <button id="pauseMainMenu" type="button">Main Menu</button>
+          <p id="pauseNote">Solo pauses the derby. Online keeps the room running.</p>
+        </div>
+      </section>
       <div class="hud">
         <div class="status">
           <strong>Donkey Derby</strong>
@@ -24,6 +51,7 @@
           <span>R reset</span>
           <span>M map</span>
           <span>P passenger</span>
+          <span>Esc pause</span>
         </div>
       </div>
       <aside class="garage" id="garage" aria-label="Car customization">
