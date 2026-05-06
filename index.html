@@ -41,6 +41,8 @@
           <span id="speed">0 mph</span>
           <span id="damage">Damage 0%</span>
           <span id="score">Hits 0</span>
+          <span id="wallet">$0</span>
+          <span id="xp">XP 0</span>
           <span id="powerup">Power none</span>
           <span id="map">Map Neon Arcade</span>
         </div>
@@ -83,6 +85,13 @@
           Champion rider
           <input id="companionToggle" type="checkbox" disabled />
         </label>
+        <section class="shop" aria-label="Derby car shop">
+          <div class="shop-header">
+            <strong>Derby Shop</strong>
+            <span id="shopFunds">$0</span>
+          </div>
+          <div id="shopItems" class="shop-items"></div>
+        </section>
       </aside>
       <button class="garage-toggle" id="openGarage" type="button" aria-label="Open garage">C</button>
       <div class="banner" id="banner">Wreck rival cars before yours falls apart.</div>

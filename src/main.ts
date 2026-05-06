@@ -7,6 +7,7 @@ import "./style.css";
 
 type BodyKit = "wedge" | "tank" | "lowrider";
 type PowerUpType = "rainbowTeeth" | "chompRam" | "hayRepair" | "goldHooves";
+type ShopKey = "exhaust" | "exhaustSound" | "enginePreset" | "engineSound" | "fuel" | "springLevel" | "springMetal" | "springStrength" | "liftKit" | "rims" | "tires" | "brakes" | "brakeStrength";
 
 interface MapTheme {
   name: string;
@@ -95,6 +96,8 @@ if (!canvas) throw new Error("Missing canvas");
 const speedEl = document.querySelector<HTMLElement>("#speed")!;
 const damageEl = document.querySelector<HTMLElement>("#damage")!;
 const scoreEl = document.querySelector<HTMLElement>("#score")!;
+const walletEl = document.querySelector<HTMLElement>("#wallet")!;
+const xpEl = document.querySelector<HTMLElement>("#xp")!;
 const powerupEl = document.querySelector<HTMLElement>("#powerup")!;
 const mapEl = document.querySelector<HTMLElement>("#map")!;
 const bannerEl = document.querySelector<HTMLElement>("#banner")!;
@@ -106,6 +109,8 @@ const stripeEl = document.querySelector<HTMLInputElement>("#stripe")!;
 const bodyKitEl = document.querySelector<HTMLSelectElement>("#bodyKit")!;
 const teethEl = document.querySelector<HTMLInputElement>("#teeth")!;
 const companionToggleEl = document.querySelector<HTMLInputElement>("#companionToggle")!;
+const shopFundsEl = document.querySelector<HTMLElement>("#shopFunds")!;
+const shopItemsEl = document.querySelector<HTMLElement>("#shopItems")!;
 const mainMenuEl = document.querySelector<HTMLElement>("#mainMenu")!;
 const pauseMenuEl = document.querySelector<HTMLElement>("#pauseMenu")!;
 const soloModeEl = document.querySelector<HTMLButtonElement>("#soloMode")!;
@@ -126,6 +131,24 @@ const customization: Customization = {
   bodyKit: bodyKitEl.value as BodyKit,
   teethScale: Number(teethEl.value),
 };
+
+const shopCatalog: Record<ShopKey, { label: string; values: string[]; baseCost: number; xp: number }> = {
+  exhaust: { label: "Exhaust pipes", values: ["Stock", "Side dump", "Stack pipes", "Twin slash", "Megaphone", "Shorties", "Bullhorn", "Quad chrome"], baseCost: 18000, xp: 30 },
+  exhaustSound: { label: "Exhaust sound", values: ["Stock rasp", "Deep rumble", "Tin can", "Angry burble", "Backfire pop", "Turbo whistle", "Drag roar", "Muffled growl"], baseCost: 12000, xp: 20 },
+  enginePreset: { label: "Engine preset", values: ["Farm stock", "Street bruiser", "Junkyard torque", "Derby monster"], baseCost: 65000, xp: 85 },
+  engineSound: { label: "Engine sound", values: ["Classic", "Hot rod", "Big block", "Turbo", "Tractor pull", "Rally"], baseCost: 16000, xp: 25 },
+  fuel: { label: "Engine type", values: ["Gas", "Diesel"], baseCost: 45000, xp: 70 },
+  springLevel: { label: "Suspension level", values: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], baseCost: 22000, xp: 35 },
+  springMetal: { label: "Spring metal", values: ["Steel", "Cast iron", "Titanium"], baseCost: 38000, xp: 55 },
+  springStrength: { label: "Spring strength", values: ["Soft", "Medium", "Heavy", "Extreme"], baseCost: 26000, xp: 40 },
+  liftKit: { label: "Lift kit", values: ["Stock", "Lift 1", "Lift 2", "Lift 3", "Lift 4", "Lift 5", "Lift 6", "Lift 7"], baseCost: 30000, xp: 45 },
+  rims: { label: "Rims", values: ["Steelies", "Chrome dish", "Beadlock", "Spiked", "Cyber mesh", "Gold deep dish", "Scrap star", "Forged derby"], baseCost: 24000, xp: 30 },
+  tires: { label: "Tires", values: ["All terrain", "Mud claw", "Street slick", "Paddle", "Studded", "Run flat", "Monster lug", "Derby bite"], baseCost: 28000, xp: 38 },
+  brakes: { label: "Brakes", values: ["Drums", "Vented disc", "Hydraulic", "Carbon ceramic"], baseCost: 34000, xp: 50 },
+  brakeStrength: { label: "Brake strength", values: ["1", "2", "3", "4", "5"], baseCost: 18000, xp: 28 },
+};
+
+const progression = loadProgression();
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -219,10 +242,19 @@ async function boot() {
     createCar("ai-3", new THREE.Vector3(0, 1.1, -17), 0x64d16e, false),
   ];
   applyCustomization();
+  renderShop();
   bindEvents();
   resize();
   pauseMenuEl.classList.add("hidden");
   renderer.setAnimationLoop(loop);
+}
+
+interface Progression {
+  money: number;
+  xp: number;
+  wins: number;
+  owned: Record<ShopKey, number>;
+  equipped: Record<ShopKey, number>;
 }
 
 async function loadDonkeyDriverModel() {
@@ -1959,14 +1991,15 @@ function applyCarControls(car: Car, throttle: number, steer: number, handbrake: 
   const angular = car.body.angvel();
   const forwardSpeed = velocity.x * fwd.x + velocity.z * fwd.z;
   const sideSpeed = velocity.x * right.x + velocity.z * right.z;
-  const maxDrive = handbrake ? Math.min(maxForward, 8) : maxForward;
+  const tuning = car.isPlayer ? playerTuning() : { speed: 1, grip: 1, brake: 1, lift: 0 };
+  const maxDrive = (handbrake ? Math.min(maxForward, 8) : maxForward) * tuning.speed;
   const targetForward = throttle >= 0 ? throttle * maxDrive : throttle * 8;
   const driveSharpness = Math.abs(throttle) < 0.05 ? 3.4 : 7.8;
-  const grip = handbrake ? 2.2 : 10.5;
+  const grip = (handbrake ? 2.2 : 10.5) * tuning.grip;
   const nextForward = THREE.MathUtils.damp(forwardSpeed, targetForward, driveSharpness, dt);
   const nextSide = THREE.MathUtils.damp(sideSpeed, 0, grip, dt);
   const steerDirection = nextForward < -0.4 ? -1 : 1;
-  const steerRate = steer * steerDirection * (1.3 + Math.min(Math.abs(nextForward) / 12, 1) * 2.1);
+  const steerRate = steer * steerDirection * (1.3 + Math.min(Math.abs(nextForward) / 12, 1) * 2.1) * tuning.brake;
 
   car.body.setLinvel(
     {
@@ -2487,6 +2520,7 @@ function maybeEnterVictory() {
 function enterVictoryPodium() {
   victory = true;
   victoryTimer = 0;
+  awardDerbyWin();
   championPassengerUnlocked = true;
   championPassengerEnabled = true;
   podiumGroup.visible = true;
@@ -2500,7 +2534,7 @@ function enterVictoryPodium() {
   }
   spawnVictoryConfetti(new THREE.Vector3(PODIUM_POSITION.x, 6, PODIUM_POSITION.z));
   playYeeHawSound();
-  showMessage("Winner. Champion passenger unlocked.");
+  showMessage("Winner. $250K paid out.");
 }
 
 function updateVictory(dt: number) {
@@ -2801,6 +2835,8 @@ function updateHud(dt: number) {
   speedEl.textContent = `${speed} mph`;
   damageEl.textContent = `Damage ${Math.min(100, Math.round(player.damage))}%`;
   scoreEl.textContent = victory ? "Winner" : `Hits ${playerHits}`;
+  walletEl.textContent = formatMoney(progression.money);
+  xpEl.textContent = `XP ${progression.xp}`;
   powerupEl.textContent = activePower ? `${powerUpLabel(activePower)} ${Math.ceil(activePowerTimer)}s` : "Power none";
   if (messageTimer > 0) {
     messageTimer -= dt;
@@ -2848,8 +2884,10 @@ function updateAudio(dt: number) {
   if (!audioContext || !engineOsc || !engineGain) return;
   const now = audioContext.currentTime;
   const speed = speedOf(player.body);
-  const targetFrequency = victory ? 92 : 58 + Math.min(360, speed * 18);
-  const targetGain = victory ? 0.025 : 0.035 + Math.min(0.18, speed / 90);
+  const tuning = playerTuning();
+  const targetFrequency = victory ? 92 : tuning.engineBase + Math.min(390, speed * tuning.enginePitch);
+  const targetGain = victory ? 0.025 : 0.035 + Math.min(0.22, speed / 90) + tuning.engineGain;
+  engineOsc.type = tuning.engineWave;
   engineOsc.frequency.setTargetAtTime(targetFrequency, now, 0.045);
   engineGain.gain.setTargetAtTime(targetGain, now, 0.08);
 }
@@ -3079,6 +3117,139 @@ function toggleChampionPassenger() {
   showMessage(championPassengerEnabled ? "Champion passenger riding next round." : "Champion passenger benched.");
 }
 
+function defaultProgression(): Progression {
+  const owned = {} as Record<ShopKey, number>;
+  const equipped = {} as Record<ShopKey, number>;
+  for (const key of Object.keys(shopCatalog) as ShopKey[]) {
+    owned[key] = 0;
+    equipped[key] = 0;
+  }
+  return { money: 0, xp: 0, wins: 0, owned, equipped };
+}
+
+function loadProgression() {
+  try {
+    const raw = localStorage.getItem("donkey-derby-progression");
+    if (!raw) return defaultProgression();
+    const parsed = JSON.parse(raw) as Progression;
+    const base = defaultProgression();
+    return {
+      ...base,
+      ...parsed,
+      owned: { ...base.owned, ...parsed.owned },
+      equipped: { ...base.equipped, ...parsed.equipped },
+    };
+  } catch {
+    return defaultProgression();
+  }
+}
+
+function saveProgression() {
+  localStorage.setItem("donkey-derby-progression", JSON.stringify(progression));
+}
+
+function awardDerbyWin() {
+  progression.money += 250000;
+  progression.xp += 500;
+  progression.wins += 1;
+  saveProgression();
+  renderShop();
+}
+
+function renderShop() {
+  shopFundsEl.textContent = `${formatMoney(progression.money)} | XP ${progression.xp}`;
+  shopItemsEl.replaceChildren();
+  for (const key of Object.keys(shopCatalog) as ShopKey[]) {
+    const item = shopCatalog[key];
+    const row = document.createElement("div");
+    row.className = "shop-row";
+
+    const label = document.createElement("label");
+    label.textContent = item.label;
+    const small = document.createElement("small");
+    const next = Math.min(progression.owned[key] + 1, item.values.length - 1);
+    small.textContent = progression.owned[key] >= item.values.length - 1 ? "Max owned" : `${formatMoney(shopCost(key, next))} | XP ${item.xp * next}`;
+    label.append(small);
+
+    const select = document.createElement("select");
+    item.values.forEach((value, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = index <= progression.owned[key] ? value : `${value} locked`;
+      option.disabled = index > progression.owned[key];
+      select.append(option);
+    });
+    select.value = String(progression.equipped[key]);
+    select.addEventListener("change", () => {
+      progression.equipped[key] = Number(select.value);
+      saveProgression();
+      applyCustomization();
+      renderShop();
+    });
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = progression.owned[key] >= item.values.length - 1 ? "Max" : "Buy";
+    button.disabled = progression.owned[key] >= item.values.length - 1;
+    button.addEventListener("click", () => buyShopUpgrade(key));
+
+    row.append(label, select, button);
+    shopItemsEl.append(row);
+  }
+}
+
+function buyShopUpgrade(key: ShopKey) {
+  const item = shopCatalog[key];
+  const next = progression.owned[key] + 1;
+  if (next >= item.values.length) return;
+  const cost = shopCost(key, next);
+  const xpRequired = item.xp * next;
+  if (progression.money < cost || progression.xp < xpRequired) {
+    showMessage(`Need ${formatMoney(cost)} and XP ${xpRequired}`);
+    return;
+  }
+  progression.money -= cost;
+  progression.owned[key] = next;
+  progression.equipped[key] = next;
+  saveProgression();
+  applyCustomization();
+  renderShop();
+  showMessage(`${item.label}: ${item.values[next]}`);
+}
+
+function shopCost(key: ShopKey, level: number) {
+  return shopCatalog[key].baseCost * level * (key === "enginePreset" ? 2 : 1);
+}
+
+function playerTuning() {
+  const eq = progression.equipped;
+  const fuelDiesel = eq.fuel === 1;
+  const engine = eq.enginePreset;
+  const spring = eq.springLevel;
+  const metal = eq.springMetal;
+  const strength = eq.springStrength;
+  const lift = eq.liftKit;
+  const tires = eq.tires;
+  const brakes = eq.brakes;
+  const brakeStrength = eq.brakeStrength;
+  return {
+    speed: 1 + engine * 0.1 + (fuelDiesel ? -0.04 : 0.03) + tires * 0.012,
+    grip: 1 + spring * 0.018 + metal * 0.025 + strength * 0.035 + tires * 0.02 - lift * 0.012,
+    brake: 1 + brakes * 0.08 + brakeStrength * 0.045,
+    lift: lift * 0.035,
+    engineBase: fuelDiesel ? 46 : 62,
+    enginePitch: 15 + engine * 2.5 + eq.engineSound * 0.8,
+    engineGain: eq.exhaustSound * 0.006 + eq.exhaust * 0.004,
+    engineWave: (fuelDiesel ? "square" : eq.engineSound % 2 === 0 ? "sawtooth" : "triangle") as OscillatorType,
+  };
+}
+
+function formatMoney(value: number) {
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `$${Math.round(value / 1000)}K`;
+  return `$${value}`;
+}
+
 interface NetworkCarState {
   id: string;
   roomId: string;
@@ -3184,7 +3355,21 @@ function applyCustomization() {
     tank: [1.16, 1.2, 1.03],
     lowrider: [1.08, 0.72, 1.12],
   };
+  const tuning = playerTuning();
   player.chassis.scale.set(...scaleByKit[customization.bodyKit]);
+  player.chassis.scale.y += tuning.lift;
+  player.group.position.y += tuning.lift * 0.08;
+  player.wheels.forEach((wheel, index) => {
+    const tireBoost = progression.equipped.tires * 0.018;
+    const rimBoost = progression.equipped.rims * 0.012;
+    wheel.scale.setScalar(1 + tireBoost + rimBoost);
+    const material = wheel.children[0] instanceof THREE.Mesh ? wheel.children[0].material : undefined;
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.color.setHSL((progression.equipped.rims * 0.08) % 1, 0.25, 0.62);
+      material.metalness = 0.45 + progression.equipped.rims * 0.05;
+    }
+    wheel.position.y = ((wheel.userData.basePosition as THREE.Vector3)?.y ?? wheel.position.y) + tuning.lift + (index % 2) * 0.005;
+  });
   for (const tooth of player.driver.teeth) {
     tooth.scale.y = customization.teethScale;
     const material = tooth.material;
