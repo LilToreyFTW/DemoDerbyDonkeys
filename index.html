@@ -10,14 +10,20 @@
       <canvas id="game"></canvas>
       <section class="menu-screen" id="mainMenu" aria-label="Main menu">
         <div class="menu-panel">
-          <p class="eyebrow">Online demolition derby</p>
-          <h1>Donkey Derby</h1>
+          <div class="brand-lockup" aria-hidden="true">
+            <span class="brand-mark">DD</span>
+            <span class="brand-rule"></span>
+            <span>Est. 2026</span>
+          </div>
+          <p class="eyebrow">Chrome • chaos • championship</p>
+          <h1>Donkey<br /><em>Derby</em></h1>
+          <p class="menu-copy">Build the meanest wreck on four wheels. Outdrive the herd. Own the arena.</p>
           <div class="menu-actions">
-            <button id="soloMode" type="button">Solo Derby</button>
-            <button id="hostOnline" type="button">Host Online</button>
+            <button id="soloMode" type="button"><span>01</span> Enter Solo Derby</button>
+            <button id="hostOnline" type="button"><span>02</span> Host Online Room</button>
             <div class="join-row">
               <input id="roomCode" type="text" maxlength="18" placeholder="Room code" />
-              <button id="joinOnline" type="button">Join</button>
+              <button id="joinOnline" type="button">Join →</button>
             </div>
           </div>
           <p id="menuStatus">Wreck the field, win the podium, bring the teeth.</p>
@@ -37,14 +43,14 @@
       </section>
       <div class="hud">
         <div class="status">
-          <strong>Donkey Derby</strong>
-          <span id="speed">0 mph</span>
-          <span id="damage">Damage 0%</span>
-          <span id="score">Hits 0</span>
-          <span id="wallet">$0</span>
-          <span id="xp">XP 0</span>
+          <strong>DD</strong>
+          <span class="hud-metric"><small>Speed</small><b id="speed">0 mph</b></span>
+          <span class="hud-metric"><small>Damage</small><b id="damage">0%</b></span>
+          <span class="hud-metric"><small>Impact</small><b id="score">0 hits</b></span>
+          <span class="hud-metric"><small>Bank</small><b id="wallet">$0</b></span>
+          <span class="hud-metric"><small>Rank</small><b id="xp">XP 0</b></span>
           <span id="powerup">Power none</span>
-          <span id="map">Map Neon Arcade</span>
+          <span id="map">Scrapyard Slam</span>
         </div>
         <div class="controls">
           <span>WASD drive</span>

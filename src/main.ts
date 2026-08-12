@@ -171,30 +171,39 @@ const shopCatalog: Record<ShopKey, { label: string; values: string[]; baseCost: 
 
 const progression = loadProgression();
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x161616);
 scene.fog = new THREE.Fog(0x161616, 45, 105);
 
-const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 220);
+const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 320);
 const clock = new THREE.Clock();
 
-const hemi = new THREE.HemisphereLight(0xfff4d6, 0x2f3f44, 1.1);
+const hemi = new THREE.HemisphereLight(0xcde9ff, 0x261b13, 1.45);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xffffff, 2.1);
-sun.position.set(16, 28, 10);
+const sun = new THREE.DirectionalLight(0xffe6c0, 3.15);
+sun.position.set(-28, 42, 24);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -50;
 sun.shadow.camera.right = 50;
 sun.shadow.camera.top = 50;
 sun.shadow.camera.bottom = -50;
+sun.shadow.bias = -0.00018;
+sun.shadow.normalBias = 0.025;
 scene.add(sun);
+
+const arenaFill = new THREE.DirectionalLight(0x77aaff, 0.8);
+arenaFill.position.set(30, 16, -34);
+scene.add(arenaFill);
 
 let world: RAPIER.World;
 let player: Car;
@@ -317,20 +326,22 @@ async function loadDerbyCarModel() {
 }
 
 function buildArena() {
-  const floorMat = new THREE.MeshStandardMaterial({ color: 0x5b5147, roughness: 0.92 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x302b27, roughness: 0.94, metalness: 0.02 });
   const floor = new THREE.Mesh(new THREE.CircleGeometry(52, 96), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const grid = new THREE.GridHelper(104, 28, 0x8d8170, 0x6f6558);
+  const grid = new THREE.GridHelper(104, 28, 0x5b5249, 0x39332e);
   grid.position.y = 0.015;
   scene.add(grid);
 
   const groundBody = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.05, 0));
   world.createCollider(RAPIER.ColliderDesc.cuboid(54, 0.05, 54).setFriction(1.1), groundBody);
 
-  const barrierMat = new THREE.MeshStandardMaterial({ color: 0x30383a, roughness: 0.7, metalness: 0.2 });
+  const barrierMat = new THREE.MeshStandardMaterial({ color: 0x252b2e, roughness: 0.56, metalness: 0.46 });
+  const barrierTopMat = new THREE.MeshStandardMaterial({ color: 0x747d7f, roughness: 0.36, metalness: 0.72 });
+  const hazardMat = new THREE.MeshStandardMaterial({ color: 0xe8a52d, roughness: 0.55, metalness: 0.18 });
   for (let i = 0; i < 24; i += 1) {
     const angle = (i / 24) * Math.PI * 2;
     const x = Math.cos(angle) * 50;
@@ -341,6 +352,20 @@ function buildArena() {
     wall.castShadow = true;
     wall.receiveShadow = true;
     scene.add(wall);
+
+    const topRail = new THREE.Mesh(new THREE.BoxGeometry(8.1, 0.18, 1.34), barrierTopMat);
+    topRail.position.set(x, 3.08, z);
+    topRail.rotation.y = -angle;
+    topRail.castShadow = true;
+    scene.add(topRail);
+
+    for (const offset of [-2.7, 0, 2.7]) {
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 1.26), hazardMat);
+      const tangent = new THREE.Vector3(-Math.sin(angle), 0, Math.cos(angle));
+      stripe.position.set(x + tangent.x * offset, 3.2, z + tangent.z * offset);
+      stripe.rotation.y = -angle;
+      scene.add(stripe);
+    }
 
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, 1.5, z).setRotation({ x: 0, y: Math.sin(-angle / 2), z: 0, w: Math.cos(-angle / 2) }));
     world.createCollider(RAPIER.ColliderDesc.cuboid(4, 1.5, 0.6).setFriction(0.8).setRestitution(0.35), body);
@@ -370,12 +395,13 @@ function buildMapLayer() {
   mapGroup = new THREE.Group();
   mapGroup.name = `map-${theme.name}`;
   scene.add(mapGroup);
-  scene.background = new THREE.Color(theme.floor).offsetHSL(0, -0.08, -0.08);
-  scene.fog = new THREE.Fog(scene.background, 52, 130);
+  const skyColor = new THREE.Color(theme.neonB).lerp(new THREE.Color(0x071019), 0.78);
+  scene.background = skyColor;
+  scene.fog = new THREE.FogExp2(skyColor, 0.0085);
 
   const floor = new THREE.Mesh(
     new THREE.RingGeometry(4, 50, 96),
-    new THREE.MeshStandardMaterial({ color: theme.floor, roughness: 0.86, metalness: 0.06 }),
+    createArenaFloorMaterial(theme),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.025;
@@ -396,6 +422,9 @@ function buildMapLayer() {
   mapGroup.add(neonGrid);
 
   buildCyberBackdrop(theme);
+  buildStadiumArchitecture(theme);
+  buildThemeLandmarks(theme);
+  buildArenaLighting(theme);
   buildPerimeterDressing(theme);
   buildDonkeyCrowd(theme);
   buildMapProps(theme);
@@ -435,6 +464,139 @@ function buildCyberBackdrop(theme: MapTheme) {
     tower.rotation.y = -angle;
     tower.castShadow = true;
     mapGroup.add(tower);
+  }
+}
+
+function createArenaFloorMaterial(theme: MapTheme) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 512;
+  textureCanvas.height = 512;
+  const ctx = textureCanvas.getContext("2d")!;
+  const base = new THREE.Color(theme.floor);
+  ctx.fillStyle = `#${base.getHexString()}`;
+  ctx.fillRect(0, 0, 512, 512);
+
+  let seed = currentMapIndex * 197 + 31;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let i = 0; i < 2800; i += 1) {
+    const shade = random() > 0.52 ? 255 : 0;
+    ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade}, ${0.012 + random() * 0.035})`;
+    const size = 0.6 + random() * 2.8;
+    ctx.fillRect(random() * 512, random() * 512, size, size);
+  }
+  ctx.strokeStyle = "rgba(12, 12, 12, .16)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 14; i += 1) {
+    ctx.beginPath();
+    let x = random() * 512;
+    let y = random() * 512;
+    ctx.moveTo(x, y);
+    for (let j = 0; j < 5; j += 1) {
+      x += (random() - 0.5) * 45;
+      y += (random() - 0.5) * 45;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(7, 7);
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return new THREE.MeshStandardMaterial({ map: texture, color: 0xffffff, roughness: 0.9, metalness: 0.06 });
+}
+
+function buildStadiumArchitecture(theme: MapTheme) {
+  const steel = new THREE.MeshStandardMaterial({ color: 0x161d22, roughness: 0.48, metalness: 0.68 });
+  const trim = new THREE.MeshStandardMaterial({ color: theme.accent, emissive: theme.accent, emissiveIntensity: 0.35, roughness: 0.38, metalness: 0.5 });
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x32383a, roughness: 0.84, metalness: 0.08 });
+
+  for (let i = 0; i < 12; i += 1) {
+    const angle = (i / 12) * Math.PI * 2;
+    const radial = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const tower = new THREE.Group();
+    tower.position.copy(radial.clone().multiplyScalar(61));
+    tower.rotation.y = -angle;
+    mapGroup.add(tower);
+
+    for (const x of [-2.1, 2.1]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.38, 9.5, 0.38), steel);
+      pillar.position.set(x, 4.75, 0);
+      pillar.castShadow = true;
+      tower.add(pillar);
+    }
+    const header = new THREE.Mesh(new THREE.BoxGeometry(5.1, 0.44, 0.5), steel);
+    header.position.y = 9.3;
+    header.castShadow = true;
+    tower.add(header);
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.1, 0.18), i % 2 ? trim : concrete);
+    sign.position.set(0, 7.3, -0.28);
+    sign.castShadow = true;
+    tower.add(sign);
+  }
+
+  const upperRibbon = new THREE.Mesh(
+    new THREE.TorusGeometry(61, 0.16, 8, 144),
+    new THREE.MeshStandardMaterial({ color: theme.neonA, emissive: theme.neonA, emissiveIntensity: 0.65, roughness: 0.3 }),
+  );
+  upperRibbon.rotation.x = Math.PI / 2;
+  upperRibbon.position.y = 9.5;
+  mapGroup.add(upperRibbon);
+}
+
+function buildArenaLighting(theme: MapTheme) {
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI * 2 + Math.PI / 6;
+    const light = new THREE.PointLight(i % 2 ? theme.neonA : theme.neonB, 13, 42, 2);
+    light.position.set(Math.cos(angle) * 43, 8.5, Math.sin(angle) * 43);
+    mapGroup.add(light);
+    const housing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.42, 0.55, 12),
+      new THREE.MeshStandardMaterial({ color: 0x151a1d, roughness: 0.42, metalness: 0.72 }),
+    );
+    housing.position.copy(light.position);
+    housing.rotation.x = Math.PI / 2;
+    mapGroup.add(housing);
+  }
+}
+
+function buildThemeLandmarks(theme: MapTheme) {
+  if (theme.props === "arcade") addBackdropBlocks(theme, 18, "city");
+  else if (theme.props === "vhs") addBackdropBlocks(theme, 14, "harbor");
+  else if (theme.props === "rink" || theme.props === "pizza") addBackdropBlocks(theme, 16, "mesa");
+  else if (theme.props === "mall") addBackdropBlocks(theme, 18, "jungle");
+  else if (theme.props === "drivein") addBackdropBlocks(theme, 15, "farm");
+  else if (theme.props === "subway") addBackdropBlocks(theme, 18, "factory");
+  else if (theme.props === "laserRink" || theme.props === "skatepark") addBackdropBlocks(theme, 17, "alpine");
+}
+
+function addBackdropBlocks(theme: MapTheme, count: number, style: "city" | "harbor" | "mesa" | "jungle" | "farm" | "factory" | "alpine") {
+  const dark = new THREE.MeshStandardMaterial({ color: 0x151a1b, roughness: 0.78, metalness: style === "factory" ? 0.42 : 0.08 });
+  const themed = new THREE.MeshStandardMaterial({ color: theme.neonB, roughness: 0.76, metalness: 0.12 });
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2 + 0.09;
+    const radius = 84 + (i % 4) * 3;
+    let geometry: THREE.BufferGeometry;
+    let height = 7 + (i % 5) * 2;
+    if (style === "mesa" || style === "alpine") geometry = new THREE.ConeGeometry(4 + (i % 3), height * 1.3, style === "alpine" ? 5 : 7);
+    else if (style === "jungle") {
+      geometry = new THREE.IcosahedronGeometry(3.8 + (i % 3), 1);
+      height = 5 + (i % 4);
+    } else if (style === "farm") geometry = i % 3 === 0 ? new THREE.CylinderGeometry(2.2, 2.6, height, 16) : new THREE.BoxGeometry(5, height * 0.55, 5);
+    else if (style === "harbor") {
+      geometry = new THREE.BoxGeometry(6 + (i % 3) * 2, 2.8 + (i % 2), 3.2);
+      height = 2.8 + (i % 2);
+    } else if (style === "factory" && i % 3 === 0) geometry = new THREE.CylinderGeometry(1.2, 1.7, height * 1.4, 14);
+    else geometry = new THREE.BoxGeometry(3.5 + (i % 3), height, 3.5 + ((i + 1) % 3));
+    const block = new THREE.Mesh(geometry, i % 3 === 0 ? themed : dark);
+    block.position.set(Math.cos(angle) * radius, height / 2, Math.sin(angle) * radius);
+    block.rotation.y = -angle + (i % 4) * 0.18;
+    block.castShadow = true;
+    block.receiveShadow = true;
+    mapGroup.add(block);
   }
 }
 
@@ -2901,8 +3063,11 @@ function updateDebris(dt: number) {
 function updateCamera(dt: number) {
   const pos = player.body.translation();
   const fwd = forwardOf(player.body);
-  const desired = victory ? new THREE.Vector3(PODIUM_POSITION.x, 5.8, PODIUM_POSITION.z - 9) : new THREE.Vector3(pos.x - fwd.x * 10, pos.y + 8, pos.z - fwd.z * 10);
+  const speed = speedOf(player.body);
+  const desired = victory ? new THREE.Vector3(PODIUM_POSITION.x, 5.8, PODIUM_POSITION.z - 9) : new THREE.Vector3(pos.x - fwd.x * 11.5, pos.y + 6.6, pos.z - fwd.z * 11.5);
   camera.position.lerp(desired, 1 - Math.pow(0.002, dt));
+  camera.fov = THREE.MathUtils.damp(camera.fov, 57 + Math.min(8, speed * 0.34), 3.2, dt);
+  camera.updateProjectionMatrix();
   if (cameraShake > 0) {
     camera.position.x += (Math.random() - 0.5) * cameraShake;
     camera.position.y += (Math.random() - 0.5) * cameraShake * 0.65;
@@ -2919,8 +3084,8 @@ function updateCamera(dt: number) {
 function updateHud(dt: number) {
   const speed = Math.round(speedOf(player.body) * 7.2);
   speedEl.textContent = `${speed} mph`;
-  damageEl.textContent = `Damage ${Math.min(100, Math.round(player.damage))}%`;
-  scoreEl.textContent = victory ? "Winner" : `Hits ${playerHits}`;
+  damageEl.textContent = `${Math.min(100, Math.round(player.damage))}%`;
+  scoreEl.textContent = victory ? "Winner" : `${playerHits} hits`;
   walletEl.textContent = formatMoney(progression.money);
   xpEl.textContent = `XP ${progression.xp}`;
   powerupEl.textContent = activePower ? `${powerUpLabel(activePower)} ${Math.ceil(activePowerTimer)}s` : "Power none";

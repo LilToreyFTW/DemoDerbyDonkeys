@@ -324,6 +324,179 @@ body,
   box-shadow: 0 12px 35px rgb(0 0 0 / 30%);
 }
 
+/* 2026 visual identity pass */
+html,
+body,
+#app {
+  background: #080b0d;
+  color: #f4efe4;
+}
+
+.menu-screen {
+  place-items: center start;
+  padding-left: clamp(32px, 7vw, 120px);
+  background:
+    linear-gradient(90deg, rgb(4 7 9 / 93%) 0%, rgb(4 7 9 / 76%) 36%, rgb(4 7 9 / 18%) 72%, rgb(4 7 9 / 42%) 100%),
+    radial-gradient(circle at 72% 42%, transparent 0%, rgb(4 6 8 / 24%) 56%, rgb(4 6 8 / 84%) 100%);
+}
+
+.menu-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgb(255 255 255 / 1.2%) 3px 4px);
+  mix-blend-mode: soft-light;
+}
+
+.menu-panel,
+.pause-panel {
+  border-radius: 2px;
+  background: linear-gradient(145deg, rgb(15 19 21 / 94%), rgb(8 11 13 / 88%));
+  border-color: rgb(255 255 255 / 12%);
+  border-left: 3px solid #f3ad31;
+  box-shadow: 0 30px 90px rgb(0 0 0 / 62%);
+  backdrop-filter: blur(20px) saturate(120%);
+}
+
+.menu-panel {
+  width: min(520px, calc(100vw - 48px));
+  padding: clamp(24px, 3vw, 38px);
+  gap: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #a9a194;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #12100c;
+  background: #f3ad31;
+  font-size: 12px;
+  letter-spacing: -.06em;
+  transform: skewX(-8deg);
+}
+
+.brand-rule {
+  width: 42px;
+  height: 1px;
+  background: rgb(255 255 255 / 22%);
+}
+
+.menu-panel h1 {
+  font-size: clamp(54px, 7vw, 86px);
+  line-height: .75;
+  letter-spacing: -.07em;
+  text-transform: uppercase;
+  text-shadow: 0 8px 28px rgb(0 0 0 / 45%);
+}
+
+.menu-panel h1 em {
+  color: #f3ad31;
+  font-style: normal;
+  -webkit-text-stroke: 1px rgb(255 240 205 / 16%);
+}
+
+.eyebrow {
+  color: #f3ad31;
+  font-weight: 900;
+  letter-spacing: .19em;
+}
+
+.menu-copy {
+  max-width: 420px;
+  font-size: 14px !important;
+  color: #c9c0b1 !important;
+}
+
+.menu-actions button,
+.pause-panel button {
+  min-height: 48px;
+  border-radius: 2px;
+  font-weight: 850;
+  letter-spacing: .035em;
+  transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.menu-actions button:hover,
+.pause-panel button:hover {
+  transform: translateX(4px);
+  border-color: #f3ad31;
+}
+
+.menu-actions button > span {
+  margin-right: 12px;
+  color: rgb(255 255 255 / 46%);
+  font-size: 10px;
+}
+
+.status,
+.controls,
+.banner,
+.garage {
+  border-radius: 2px;
+  background: linear-gradient(135deg, rgb(10 14 17 / 88%), rgb(19 23 25 / 72%));
+  border-color: rgb(255 255 255 / 12%);
+  backdrop-filter: blur(16px) saturate(125%);
+}
+
+.status > strong {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: -6px 2px -6px -8px;
+  color: #14100a;
+  background: #f3ad31;
+  transform: skewX(-8deg);
+}
+
+.hud-metric {
+  display: grid;
+  gap: 1px;
+  padding-right: 12px;
+  border-right: 1px solid rgb(255 255 255 / 10%);
+}
+
+.hud-metric small {
+  color: #8e8a83;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+.hud-metric b {
+  font-size: 13px;
+  color: #f7f1e6;
+}
+
+.banner {
+  border-bottom: 2px solid #f3ad31;
+}
+
+.garage {
+  border-top: 2px solid #f3ad31;
+}
+
+.garage-toggle {
+  border-radius: 2px;
+  border-bottom: 3px solid #f3ad31;
+}
+
 @media (max-width: 720px) {
   .hud {
     inset: 10px 10px auto 10px;
