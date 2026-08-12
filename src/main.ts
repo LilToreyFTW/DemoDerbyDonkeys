@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import donkeyDriverUrl from "./assets/donkey-driver.glb?url";
 import derbyCarUrl from "./assets/derby-car.glb?url";
+import { GARAGE_VISUAL_KEYS, type GarageVisualKey, visualUpgradeSpec } from "./garage-visuals";
 import "./style.css";
 
 type BodyKit = "wedge" | "tank" | "lowrider";
@@ -101,6 +102,7 @@ interface Car {
   visualShell?: THREE.Group;
   visualDamage?: CarVisualDamage;
   championPassenger?: ChampionPassenger;
+  upgradeVisuals?: THREE.Group;
   damage: number;
   scoreValue: number;
   isPlayer: boolean;
@@ -1490,6 +1492,12 @@ function createCar(id: string, position: THREE.Vector3, color: number, isPlayer:
     group.add(championPassenger.group);
   }
 
+  const upgradeVisuals = isPlayer ? new THREE.Group() : undefined;
+  if (upgradeVisuals) {
+    upgradeVisuals.name = "garage-upgrade-visuals";
+    group.add(upgradeVisuals);
+  }
+
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(position.x, position.y, position.z)
@@ -1519,6 +1527,7 @@ function createCar(id: string, position: THREE.Vector3, color: number, isPlayer:
     visualShell,
     visualDamage,
     championPassenger,
+    upgradeVisuals,
     damage: 0,
     scoreValue: 1,
     isPlayer,
@@ -3064,7 +3073,13 @@ function updateCamera(dt: number) {
   const pos = player.body.translation();
   const fwd = forwardOf(player.body);
   const speed = speedOf(player.body);
-  const desired = victory ? new THREE.Vector3(PODIUM_POSITION.x, 5.8, PODIUM_POSITION.z - 9) : new THREE.Vector3(pos.x - fwd.x * 11.5, pos.y + 6.6, pos.z - fwd.z * 11.5);
+  const garagePreview = garageEl.classList.contains("open") && gameStarted && !victory;
+  const previewAngle = clock.elapsedTime * 0.24;
+  const desired = victory
+    ? new THREE.Vector3(PODIUM_POSITION.x, 5.8, PODIUM_POSITION.z - 9)
+    : garagePreview
+      ? new THREE.Vector3(pos.x + Math.sin(previewAngle) * 8.4, pos.y + 4.25, pos.z + Math.cos(previewAngle) * 8.4)
+      : new THREE.Vector3(pos.x - fwd.x * 11.5, pos.y + 6.6, pos.z - fwd.z * 11.5);
   camera.position.lerp(desired, 1 - Math.pow(0.002, dt));
   camera.fov = THREE.MathUtils.damp(camera.fov, 57 + Math.min(8, speed * 0.34), 3.2, dt);
   camera.updateProjectionMatrix();
@@ -3076,6 +3091,8 @@ function updateCamera(dt: number) {
   }
   if (victory) {
     camera.lookAt(PODIUM_POSITION.x, 3.7, PODIUM_POSITION.z);
+  } else if (garagePreview) {
+    camera.lookAt(pos.x, pos.y + 1.05, pos.z);
   } else {
     camera.lookAt(pos.x, pos.y + 1.5, pos.z);
   }
@@ -3436,6 +3453,7 @@ function renderShop() {
       saveProgression();
       applyCustomization();
       renderShop();
+      showMessage(`Equipped ${item.values[progression.equipped[key]]} — visible on your car`);
     });
 
     const button = document.createElement("button");
@@ -3465,7 +3483,7 @@ function buyShopUpgrade(key: ShopKey) {
   saveProgression();
   applyCustomization();
   renderShop();
-  showMessage(`${item.label}: ${item.values[next]}`);
+  showMessage(`${item.label}: ${item.values[next]} equipped and installed`);
 }
 
 function shopCost(key: ShopKey, level: number) {
@@ -3607,12 +3625,130 @@ function applyRemoteCarState(state: NetworkCarState) {
   car.group.quaternion.set(state.rotation[0], state.rotation[1], state.rotation[2], state.rotation[3]);
 }
 
+function upgradeMaterial(color: number, metalness = 0.65, roughness = 0.32) {
+  return new THREE.MeshStandardMaterial({ color, metalness, roughness });
+}
+
+function addUpgradeMesh(group: THREE.Object3D, name: string, geometry: THREE.BufferGeometry, material: THREE.Material, position: THREE.Vector3Tuple, rotation: THREE.Vector3Tuple = [0, 0, 0], scale: THREE.Vector3Tuple = [1, 1, 1]) {
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.position.set(...position);
+  mesh.rotation.set(...rotation);
+  mesh.scale.set(...scale);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+  return mesh;
+}
+
+function rebuildGarageUpgradeVisuals() {
+  const root = player.upgradeVisuals;
+  if (!root) return;
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.geometry.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) material.dispose();
+  });
+  root.clear();
+
+  for (const key of GARAGE_VISUAL_KEYS) {
+    const level = progression.equipped[key as ShopKey];
+    const spec = visualUpgradeSpec(key, level);
+    if (!spec.visible) continue;
+    const group = new THREE.Group();
+    group.name = `upgrade-${key}`;
+    group.userData.upgradeKey = key;
+    group.userData.upgradeLevel = level;
+    group.userData.upgradeLabel = spec.label;
+    buildGarageUpgradeModel(group, key, level, spec.accent, spec.scale);
+    root.add(group);
+  }
+}
+
+function buildGarageUpgradeModel(group: THREE.Group, key: GarageVisualKey, level: number, accent: number, scale: number) {
+  const chrome = upgradeMaterial(0xdce5e8, 0.9, 0.18);
+  const dark = upgradeMaterial(0x141719, 0.5, 0.62);
+  const accentMat = upgradeMaterial(accent, 0.58, 0.3);
+  const glow = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.48, metalness: 0.32, roughness: 0.3 });
+
+  if (key === "exhaust") {
+    const count = Math.min(4, 1 + Math.floor(level / 2));
+    for (let i = 0; i < count; i += 1) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const row = Math.floor(i / 2);
+      addUpgradeMesh(group, `exhaust-tip-${i}`, new THREE.CylinderGeometry(0.12 + level * 0.008, 0.16, 1.25 + row * 0.28, 14), chrome, [side * (1.2 + row * 0.22), 1.05 + row * 0.18, 2.45], [Math.PI / 2, 0, 0]);
+    }
+  } else if (key === "exhaustSound") {
+    for (const x of [-0.78, 0.78]) {
+      addUpgradeMesh(group, `resonator-${x}`, new THREE.CylinderGeometry(0.24, 0.24, 0.78 * scale, 16), glow, [x, 0.72, 2.22], [Math.PI / 2, 0, 0]);
+      addUpgradeMesh(group, `resonator-band-${x}`, new THREE.TorusGeometry(0.25, 0.045, 8, 16), chrome, [x, 0.72, 2.63], [Math.PI / 2, 0, 0]);
+    }
+  } else if (key === "enginePreset") {
+    addUpgradeMesh(group, "engine-blower", new THREE.BoxGeometry(1.15 * scale, 0.55 * scale, 0.9), dark, [0, 2.05, -1.48]);
+    for (const x of [-0.34, 0.34]) addUpgradeMesh(group, `blower-scoop-${x}`, new THREE.BoxGeometry(0.5, 0.24 + level * 0.025, 0.72), glow, [x, 2.38, -1.7], [-0.14, 0, 0]);
+    for (const x of [-0.5, 0, 0.5]) addUpgradeMesh(group, `engine-rib-${x}`, new THREE.BoxGeometry(0.09, 0.18, 0.92), chrome, [x, 2.32, -1.48]);
+  } else if (key === "engineSound") {
+    const intakeRadius = 0.22 + level * 0.016;
+    for (const x of [-0.68, 0.68]) {
+      addUpgradeMesh(group, `intake-${x}`, new THREE.CylinderGeometry(intakeRadius, intakeRadius * 1.35, 0.74, 18), glow, [x, 2.12, -1.58], [Math.PI / 2, 0, 0]);
+      addUpgradeMesh(group, `intake-filter-${x}`, new THREE.TorusGeometry(intakeRadius * 1.25, 0.055, 8, 18), chrome, [x, 2.12, -1.98], [Math.PI / 2, 0, 0]);
+    }
+  } else if (key === "fuel") {
+    const tankColor = level % 2 === 0 ? 0x66747a : 0xc6a23a;
+    addUpgradeMesh(group, "fuel-cell", new THREE.BoxGeometry(1.7, 0.48, 1.0), upgradeMaterial(tankColor, 0.72, 0.34), [0, 1.45, 1.72]);
+    for (const x of [-0.62, 0.62]) addUpgradeMesh(group, `fuel-strap-${x}`, new THREE.BoxGeometry(0.12, 0.53, 1.08), dark, [x, 1.45, 1.72]);
+    addUpgradeMesh(group, "fuel-cap", new THREE.CylinderGeometry(0.15, 0.15, 0.14, 16), glow, [0.52, 1.76, 1.62]);
+  } else if (key === "springLevel" || key === "springMetal") {
+    const springColor = key === "springLevel" ? accent : level >= 2 ? 0x9bd8ff : accent;
+    for (const x of [-1.62, 1.62]) {
+      for (const z of [-1.65, 1.65]) {
+        addUpgradeMesh(group, `${key}-${x}-${z}`, new THREE.TorusKnotGeometry(0.13 + level * 0.006, 0.035, 28, 6, 2, 3), upgradeMaterial(springColor, 0.75, 0.24), [x, 0.8 + level * 0.025, z], [Math.PI / 2, 0, 0], [0.7, 0.7, 0.7]);
+      }
+    }
+  } else if (key === "springStrength") {
+    addUpgradeMesh(group, "rear-roll-cage", new THREE.TorusGeometry(1.23 * scale, 0.075 + level * 0.006, 10, 28, Math.PI), accentMat, [0, 2.38, 0.74], [0, Math.PI / 2, Math.PI / 2]);
+    for (const x of [-1.12, 1.12]) addUpgradeMesh(group, `cage-brace-${x}`, new THREE.CylinderGeometry(0.06, 0.06, 1.58, 10), chrome, [x, 1.82, 0.82], [0.12, 0, x < 0 ? -0.25 : 0.25]);
+  } else if (key === "liftKit") {
+    const lift = 0.12 + level * 0.055;
+    for (const x of [-1.55, 1.55]) {
+      addUpgradeMesh(group, `lift-rail-${x}`, new THREE.BoxGeometry(0.18, 0.22, 4.25), accentMat, [x, 0.4 + lift, 0]);
+      for (const z of [-1.55, 1.55]) addUpgradeMesh(group, `lift-shock-${x}-${z}`, new THREE.CylinderGeometry(0.075, 0.075, 0.72 + lift, 12), glow, [x, 0.65 + lift, z]);
+    }
+  } else if (key === "rims" || key === "tires") {
+    for (const x of [-1.82, 1.82]) {
+      for (const z of [-1.75, 1.75]) {
+        const wheelRadius = 0.57 + (key === "tires" ? level * 0.025 : 0);
+        if (key === "tires") addUpgradeMesh(group, `tire-${x}-${z}`, new THREE.TorusGeometry(wheelRadius, 0.2 + level * 0.012, 12, 24), dark, [x, 0.62 + progression.equipped.liftKit * 0.035, z], [0, Math.PI / 2, 0]);
+        else {
+          const rim = addUpgradeMesh(group, `rim-${x}-${z}`, new THREE.CylinderGeometry(0.34 * scale, 0.34 * scale, 0.48, 20), accentMat, [x, 0.62 + progression.equipped.liftKit * 0.035, z], [0, 0, Math.PI / 2]);
+          for (let spoke = 0; spoke < 5 + Math.min(level, 5); spoke += 1) {
+            const spokeMesh = addUpgradeMesh(rim, `spoke-${spoke}`, new THREE.BoxGeometry(0.04, 0.46 * scale, 0.05), chrome, [0, 0, 0], [0, 0, (spoke / (5 + Math.min(level, 5))) * Math.PI * 2]);
+            spokeMesh.position.y = 0;
+          }
+        }
+      }
+    }
+  } else if (key === "brakes") {
+    for (const x of [-1.84, 1.84]) {
+      for (const z of [-1.76, 1.76]) {
+        addUpgradeMesh(group, `rotor-${x}-${z}`, new THREE.CylinderGeometry(0.27 * scale, 0.27 * scale, 0.5, 24), chrome, [x, 0.62, z], [0, 0, Math.PI / 2]);
+        addUpgradeMesh(group, `caliper-${x}-${z}`, new THREE.BoxGeometry(0.12, 0.26, 0.14), glow, [x + (x < 0 ? -0.27 : 0.27), 0.62, z]);
+      }
+    }
+  } else if (key === "brakeStrength") {
+    addUpgradeMesh(group, "front-brace", new THREE.BoxGeometry(4.0 * scale, 0.26, 0.22), accentMat, [0, 0.92, -3.08]);
+    for (const x of [-1.5, -0.75, 0, 0.75, 1.5]) addUpgradeMesh(group, `brace-tooth-${x}`, new THREE.ConeGeometry(0.11 + level * 0.008, 0.42 + level * 0.025, 4), chrome, [x * scale, 0.78, -3.28], [Math.PI, 0, 0]);
+  }
+}
+
 function applyCustomization() {
   setMeshColor(player.chassis, customization.paint);
   setMeshColor(player.stripe, customization.stripe);
   if (player.visualShell) {
     tintDerbyCarVisual(player.visualShell, customization.paint, customization.stripe);
   }
+  rebuildGarageUpgradeVisuals();
   const scaleByKit: Record<BodyKit, THREE.Vector3Tuple> = {
     wedge: [1, 1, 1],
     tank: [1.16, 1.2, 1.03],

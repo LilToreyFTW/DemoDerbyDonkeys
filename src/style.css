@@ -275,6 +275,11 @@ body,
   background: rgb(255 255 255 / 6%);
 }
 
+.shop-row:has(select:focus) {
+  outline: 1px solid #f3ad31;
+  background: rgb(243 173 49 / 10%);
+}
+
 .shop-row label {
   display: grid;
   grid-template-columns: 1fr;
