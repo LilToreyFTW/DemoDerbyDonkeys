@@ -63,6 +63,27 @@ interface PowerUp {
   active: boolean;
 }
 
+interface ActivePowerState {
+  active: boolean;
+  timer: number;
+}
+
+interface CarTuning {
+  speed: number;
+  grip: number;
+  brake: number;
+  lift: number;
+  reverseSpeed: number;
+  acceleration: number;
+  coastDrag: number;
+  steerResponse: number;
+  steerGrip: number;
+  engineBase: number;
+  enginePitch: number;
+  engineGain: number;
+  engineWave: OscillatorType;
+}
+
 interface Car {
   id: string;
   group: THREE.Group;
@@ -193,6 +214,12 @@ let championPassengerUnlocked = false;
 let championPassengerEnabled = false;
 let activePower: PowerUpType | null = null;
 let activePowerTimer = 0;
+const activePowerStates: Record<PowerUpType, ActivePowerState> = {
+  rainbowTeeth: { active: false, timer: 0 },
+  chompRam: { active: false, timer: 0 },
+  hayRepair: { active: false, timer: 0 },
+  goldHooves: { active: false, timer: 0 },
+};
 let gameStarted = false;
 let pauseOpen = false;
 let gameMode: "solo" | "online" = "solo";
@@ -1977,10 +2004,15 @@ function loop() {
 
 function handlePlayer(dt: number) {
   if (victory || player.damage >= 100) return;
-  const throttle = (pressed("w", "arrowup") ? 1 : 0) - (pressed("s", "arrowdown") ? 0.72 : 0);
-  const steer = (pressed("a", "arrowleft") ? 1 : 0) - (pressed("d", "arrowright") ? 1 : 0);
+  const forwardPressed = pressed("w", "arrowup");
+  const reversePressed = pressed("s", "arrowdown");
+  const leftPressed = pressed("a", "arrowleft");
+  const rightPressed = pressed("d", "arrowright");
+  const throttle = (forwardPressed ? 1 : 0) - (reversePressed ? 0.88 : 0);
+  const rawSteer = (leftPressed ? 1 : 0) - (rightPressed ? 1 : 0);
   const handbrake = keys.has(" ");
-  const speedBoost = activePower === "goldHooves" ? 1.45 : 1;
+  const steer = THREE.MathUtils.lerp(0, rawSteer, handbrake ? 1 : forwardPressed || reversePressed ? 1 : 0.72);
+  const speedBoost = hasPowerUp("goldHooves") ? 1.45 : 1;
   applyCarControls(player, throttle, steer, handbrake, dt, 17 * speedBoost);
 }
 
@@ -1991,15 +2023,41 @@ function applyCarControls(car: Car, throttle: number, steer: number, handbrake: 
   const angular = car.body.angvel();
   const forwardSpeed = velocity.x * fwd.x + velocity.z * fwd.z;
   const sideSpeed = velocity.x * right.x + velocity.z * right.z;
-  const tuning = car.isPlayer ? playerTuning() : { speed: 1, grip: 1, brake: 1, lift: 0 };
-  const maxDrive = (handbrake ? Math.min(maxForward, 8) : maxForward) * tuning.speed;
-  const targetForward = throttle >= 0 ? throttle * maxDrive : throttle * 8;
-  const driveSharpness = Math.abs(throttle) < 0.05 ? 3.4 : 7.8;
-  const grip = (handbrake ? 2.2 : 10.5) * tuning.grip;
+  const tuning: CarTuning = car.isPlayer
+    ? playerTuning()
+    : {
+        speed: 1,
+        grip: 1,
+        brake: 1,
+        lift: 0,
+        reverseSpeed: 0.75,
+        acceleration: 7.8,
+        coastDrag: 3.4,
+        steerResponse: 1,
+        steerGrip: 1,
+        engineBase: 62,
+        enginePitch: 15,
+        engineGain: 0,
+        engineWave: "sawtooth",
+      };
+  const maxDrive = (handbrake ? Math.min(maxForward, 8.8) : maxForward) * tuning.speed;
+  const reverseDrive = Math.max(6.5, maxForward * tuning.reverseSpeed);
+  const targetForward = throttle >= 0 ? throttle * maxDrive : throttle * reverseDrive;
+  const driveSharpness = Math.abs(throttle) < 0.05 ? tuning.coastDrag : tuning.acceleration;
+  const grip = (handbrake ? 3.1 : 11.8) * tuning.grip * tuning.steerGrip;
   const nextForward = THREE.MathUtils.damp(forwardSpeed, targetForward, driveSharpness, dt);
   const nextSide = THREE.MathUtils.damp(sideSpeed, 0, grip, dt);
   const steerDirection = nextForward < -0.4 ? -1 : 1;
-  const steerRate = steer * steerDirection * (1.3 + Math.min(Math.abs(nextForward) / 12, 1) * 2.1) * tuning.brake;
+  const speedRatio = clamp(Math.abs(nextForward) / Math.max(1, maxDrive), 0, 1.15);
+  const steerAuthority = handbrake ? 1.45 : 0.82 + (1 - speedRatio) * 0.62;
+  const steerRate =
+    steer *
+    steerDirection *
+    (1.55 + Math.min(Math.abs(nextForward) / 10.5, 1) * 1.75) *
+    tuning.brake *
+    tuning.steerResponse *
+    steerAuthority;
+  const steerDamping = Math.abs(steer) < 0.05 ? 10.5 : 15;
 
   car.body.setLinvel(
     {
@@ -2009,7 +2067,7 @@ function applyCarControls(car: Car, throttle: number, steer: number, handbrake: 
     },
     true,
   );
-  car.body.setAngvel({ x: angular.x * 0.2, y: THREE.MathUtils.damp(angular.y, steerRate, Math.abs(steer) < 0.05 ? 8 : 12, dt), z: angular.z * 0.2 }, true);
+  car.body.setAngvel({ x: angular.x * 0.2, y: THREE.MathUtils.damp(angular.y, steerRate, steerDamping, dt), z: angular.z * 0.2 }, true);
 }
 
 function updateAi(dt: number) {
@@ -2252,7 +2310,9 @@ function scoreCollisions() {
       const hitPoint = new THREE.Vector3((a.x + b.x) * 0.5, 1.05, (a.z + b.z) * 0.5);
       const smash = Math.min(1, impact / 13);
       const playerInvolved = aCar.isPlayer || bCar.isPlayer;
-      const playerPower = activePower === "rainbowTeeth" ? 1.55 : activePower === "chompRam" ? 1.85 : 1;
+      const rainbowBonus = hasPowerUp("rainbowTeeth") ? 1.55 : 1;
+      const ramBonus = hasPowerUp("chompRam") ? 1.85 : 1;
+      const playerPower = Math.max(rainbowBonus, ramBonus);
       const aMultiplier = aCar.isPlayer ? playerPower : 1;
       const bMultiplier = bCar.isPlayer ? playerPower : 1;
       const aAttack = aSpeed + relativeSpeed * 0.45;
@@ -2273,8 +2333,8 @@ function scoreCollisions() {
       spawnImpactDebris(hitPoint, hitDirection, impact * Math.max(aMultiplier, bMultiplier));
       spawnDamageSmoke(aCar, hitPoint, impact);
       spawnDamageSmoke(bCar, hitPoint, impact);
-      if (playerInvolved && (activePower === "rainbowTeeth" || activePower === "chompRam")) {
-        spawnPowerBurst(hitPoint, activePower);
+      if (playerInvolved && (hasPowerUp("rainbowTeeth") || hasPowerUp("chompRam"))) {
+        spawnPowerBurst(hitPoint, hasPowerUp("chompRam") ? "chompRam" : "rainbowTeeth");
       }
       playCrashSound(impact * Math.max(aMultiplier, bMultiplier));
       if (playerInvolved) playDonkeyHitSound(impact);
@@ -2393,15 +2453,20 @@ function updateProgressiveDamage(dt: number) {
 }
 
 function updatePowerUps(dt: number) {
-  if (activePowerTimer > 0) {
-    activePowerTimer -= dt;
-    if (activePower === "rainbowTeeth") {
+  for (const type of Object.keys(activePowerStates) as PowerUpType[]) {
+    const state = activePowerStates[type];
+    if (!state.active) continue;
+    if (type === "rainbowTeeth") {
       updateRainbowTeeth();
     }
-    if (activePowerTimer <= 0) {
-      clearPowerUpEffect();
+    if (state.timer > 0) {
+      state.timer -= dt;
+      if (state.timer <= 0) {
+        clearPowerUpEffect(type);
+      }
     }
   }
+  syncActivePowerHud();
 
   const now = performance.now();
   const playerPos = player.body.translation();
@@ -2428,28 +2493,26 @@ function collectPowerUp(powerUp: PowerUp) {
   powerUp.active = false;
   powerUp.group.visible = false;
   powerUp.respawnAt = performance.now() + 14000;
-  activePower = powerUp.type;
-  activePowerTimer = powerUp.type === "hayRepair" ? 0 : 9;
 
   if (powerUp.type === "rainbowTeeth") {
-    activePowerTimer = 10;
+    setPowerUpState("rainbowTeeth", 10);
     for (const tooth of player.driver.teeth) {
       tooth.scale.y = Math.max(tooth.scale.y, customization.teethScale * 1.8);
     }
     showMessage("Rainbow teeth: boosted impact");
   } else if (powerUp.type === "chompRam") {
-    activePowerTimer = 8;
+    setPowerUpState("chompRam", 8);
     player.ram.scale.set(1.45, 1.35, 1.55);
     showMessage("Chomp ram: savage hits");
   } else if (powerUp.type === "hayRepair") {
     repairPlayerCar();
-    activePower = null;
     showMessage("Hay repair: patched up");
   } else {
-    activePowerTimer = 8;
+    setPowerUpState("goldHooves", 8);
     showMessage("Gold hooves: speed boost");
   }
 
+  syncActivePowerHud();
   spawnPowerBurst(powerUp.position, powerUp.type);
 }
 
@@ -2463,15 +2526,16 @@ function repairPlayerCar() {
   player.stripe.scale.x = Math.min(1, player.stripe.scale.x + 0.12);
 }
 
-function clearPowerUpEffect() {
-  if (activePower === "rainbowTeeth") {
+function clearPowerUpEffect(type: PowerUpType) {
+  activePowerStates[type].active = false;
+  activePowerStates[type].timer = 0;
+  if (type === "rainbowTeeth") {
     applyCustomization();
   }
-  if (activePower === "chompRam") {
+  if (type === "chompRam") {
     player.ram.scale.set(1, 1, 1);
   }
-  activePower = null;
-  activePowerTimer = 0;
+  syncActivePowerHud();
 }
 
 function updateRainbowTeeth() {
@@ -2483,6 +2547,28 @@ function updateRainbowTeeth() {
       material.emissiveIntensity = 0.8;
     }
   });
+}
+
+function setPowerUpState(type: PowerUpType, duration: number) {
+  activePowerStates[type].active = true;
+  activePowerStates[type].timer = Math.max(activePowerStates[type].timer, duration);
+}
+
+function hasPowerUp(type: PowerUpType) {
+  return activePowerStates[type].active;
+}
+
+function syncActivePowerHud() {
+  const activeTypes = (Object.keys(activePowerStates) as PowerUpType[]).filter((type) => activePowerStates[type].active);
+  if (activeTypes.length === 0) {
+    activePower = null;
+    activePowerTimer = 0;
+    return;
+  }
+
+  activeTypes.sort((a, b) => activePowerStates[b].timer - activePowerStates[a].timer);
+  activePower = activeTypes[0];
+  activePowerTimer = activePowerStates[activePower].timer;
 }
 
 function spawnPowerBurst(position: THREE.Vector3, type: PowerUpType) {
@@ -3232,14 +3318,26 @@ function playerTuning() {
   const tires = eq.tires;
   const brakes = eq.brakes;
   const brakeStrength = eq.brakeStrength;
+  const exhaustFlow = eq.exhaust * 0.018;
+  const exhaustTone = eq.exhaustSound * 0.012;
+  const engineSoundResponse = eq.engineSound * 0.01;
+  const springSupport = spring * 0.018 + metal * 0.028 + strength * 0.04;
+  const tireGrip = tires * 0.026;
+  const brakeForce = brakes * 0.085 + brakeStrength * 0.055;
+  const rimWeightPenalty = eq.rims * 0.008;
   return {
-    speed: 1 + engine * 0.1 + (fuelDiesel ? -0.04 : 0.03) + tires * 0.012,
-    grip: 1 + spring * 0.018 + metal * 0.025 + strength * 0.035 + tires * 0.02 - lift * 0.012,
-    brake: 1 + brakes * 0.08 + brakeStrength * 0.045,
+    speed: 1 + engine * 0.11 + (fuelDiesel ? -0.03 : 0.045) + tireGrip + exhaustFlow - rimWeightPenalty,
+    grip: 1 + springSupport + tireGrip - lift * 0.012,
+    brake: 1 + brakeForce,
     lift: lift * 0.035,
+    reverseSpeed: 0.68 + engine * 0.045 + brakeStrength * 0.018,
+    acceleration: 7.6 + engine * 0.95 + eq.fuel * 0.35 + eq.exhaust * 0.3 + eq.engineSound * 0.18,
+    coastDrag: 3.8 + brakes * 0.42 + brakeStrength * 0.35 + tires * 0.14,
+    steerResponse: 1 + tireGrip * 0.8 + springSupport * 0.34 - lift * 0.018,
+    steerGrip: 1 + tireGrip * 0.65 + brakeForce * 0.18,
     engineBase: fuelDiesel ? 46 : 62,
-    enginePitch: 15 + engine * 2.5 + eq.engineSound * 0.8,
-    engineGain: eq.exhaustSound * 0.006 + eq.exhaust * 0.004,
+    enginePitch: 15 + engine * 2.5 + eq.engineSound * 0.8 + exhaustTone * 18,
+    engineGain: eq.exhaustSound * 0.006 + eq.exhaust * 0.004 + engineSoundResponse * 0.08,
     engineWave: (fuelDiesel ? "square" : eq.engineSound % 2 === 0 ? "sawtooth" : "triangle") as OscillatorType,
   };
 }
@@ -3356,9 +3454,14 @@ function applyCustomization() {
     lowrider: [1.08, 0.72, 1.12],
   };
   const tuning = playerTuning();
+  player.group.position.y = 0;
   player.chassis.scale.set(...scaleByKit[customization.bodyKit]);
   player.chassis.scale.y += tuning.lift;
   player.group.position.y += tuning.lift * 0.08;
+  player.ram.scale.set(1 + progression.equipped.brakes * 0.035, 1 + progression.equipped.brakeStrength * 0.025, 1 + progression.equipped.brakes * 0.05);
+  player.ram.position.z = -2.9 - progression.equipped.brakes * 0.04;
+  player.ram.position.y = 0.88 + tuning.lift * 0.18;
+  player.cabin.position.y = 1.65 + tuning.lift * 0.22;
   player.wheels.forEach((wheel, index) => {
     const tireBoost = progression.equipped.tires * 0.018;
     const rimBoost = progression.equipped.rims * 0.012;
@@ -3368,10 +3471,13 @@ function applyCustomization() {
       material.color.setHSL((progression.equipped.rims * 0.08) % 1, 0.25, 0.62);
       material.metalness = 0.45 + progression.equipped.rims * 0.05;
     }
-    wheel.position.y = ((wheel.userData.basePosition as THREE.Vector3)?.y ?? wheel.position.y) + tuning.lift + (index % 2) * 0.005;
+    const base = (wheel.userData.basePosition as THREE.Vector3)?.clone() ?? wheel.position.clone();
+    wheel.position.copy(base);
+    wheel.position.y += tuning.lift + (index % 2) * 0.005;
+    wheel.position.z += progression.equipped.tires * 0.01 * (index < 2 ? -1 : 1);
   });
   for (const tooth of player.driver.teeth) {
-    tooth.scale.y = customization.teethScale;
+    tooth.scale.y = customization.teethScale + progression.equipped.exhaust * 0.03;
     const material = tooth.material;
     if (material instanceof THREE.MeshStandardMaterial) {
       material.color.set(0xfff9df);
@@ -3379,12 +3485,24 @@ function applyCustomization() {
       material.emissiveIntensity = 0;
     }
   }
+  if (hasPowerUp("rainbowTeeth")) {
+    for (const tooth of player.driver.teeth) {
+      tooth.scale.y = Math.max(tooth.scale.y, customization.teethScale * 1.8);
+    }
+  }
+  if (hasPowerUp("chompRam")) {
+    player.ram.scale.multiply(new THREE.Vector3(1.45, 1.35, 1.55));
+  }
 }
 
 function resetGame() {
   victory = false;
   victoryTimer = 0;
   podiumGroup.visible = false;
+  for (const type of Object.keys(activePowerStates) as PowerUpType[]) {
+    activePowerStates[type].active = false;
+    activePowerStates[type].timer = 0;
+  }
   activePower = null;
   activePowerTimer = 0;
   const starts = [
